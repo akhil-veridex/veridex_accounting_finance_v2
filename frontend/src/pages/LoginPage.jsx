@@ -31,7 +31,7 @@ export default function LoginPage({ onSwitchToRegister }) {
         {/* Left brand panel */}
         <div className="auth-left">
           <div className="auth-left-content">
-            <svg width="68" height="68" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg width="68" height="68" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
               <defs>
                 <linearGradient id="authVdGrad" x1="0%" y1="0%" x2="100%" y2="100%">
                   <stop offset="0%" stopColor="#F97316" />
@@ -121,9 +121,9 @@ export default function LoginPage({ onSwitchToRegister }) {
             </button>
           </form>
 
-          <div className="auth-link" onClick={onSwitchToRegister} style={{ cursor: 'pointer' }}>
+          <button type="button" className="auth-link" onClick={onSwitchToRegister}>
             Need a new organization? Onboard New Tenant
-          </div>
+          </button>
         </div>
       </div>
     </div>

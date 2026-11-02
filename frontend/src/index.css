@@ -310,3 +310,13 @@ input[type].pr-10 { padding-right: 2.5rem; }
 .light .from-purple-950\/40 {
   --tw-gradient-from: #faf5ff var(--tw-gradient-from-position);
 }
+
+/* The "Onboard New Tenant" link is a real <button>; strip the native button chrome */
+button.auth-link {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+}
