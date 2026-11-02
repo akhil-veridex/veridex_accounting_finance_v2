@@ -47,7 +47,9 @@ const {
   CommissionDispute,
   DelinquencyCase,
   DunningAction,
-  CollectionAssignment
+  CollectionAssignment,
+  BillingPolicySnapshot,
+  BillingTransactionSnapshot
 } = require('../models');
 const { hashPassword } = require('../utils/crypto');
 const { generateToken } = require('../middleware/authMiddleware');
@@ -383,16 +385,24 @@ async function resetDevData(req, res) {
       DelinquencyCase.deleteMany({ tenant_id: tenantId }),
       DunningAction.deleteMany({ tenant_id: tenantId }),
       CollectionAssignment.deleteMany({ tenant_id: tenantId }),
+      BillingPolicySnapshot.deleteMany({ tenant_id: tenantId }),
+      BillingTransactionSnapshot.deleteMany({ tenant_id: tenantId }),
       LedgerAccount.updateMany(
         { tenant_id: tenantId },
-        { $set: { current_balance: mongoose.Types.Decimal128.fromString('0.00') } }
+        {
+          $set: {
+            current_balance: mongoose.Types.Decimal128.fromString('0.00'),
+            current_balance_debit: mongoose.Types.Decimal128.fromString('0.00'),
+            current_balance_credit: mongoose.Types.Decimal128.fromString('0.00')
+          }
+        }
       )
     ]);
 
-    return res.success({
+return res.success({
       cleared: true,
       tenantId: tenantId.toString()
-    }, { message: 'Test data for this tenant workspace cleared successfully' });
+    }, { message: 'All test data and schedules cleared successfully.' });
   } catch (err) {
     return res.error('Failed to clear test data', 500, err.message);
   }

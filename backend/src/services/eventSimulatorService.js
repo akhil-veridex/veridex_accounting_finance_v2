@@ -65,6 +65,12 @@ async function simulateJournalFromEvent({
   }
 
   // 3. Evaluate lines and resolve LedgerAccounts
+  const coaCount = await LedgerAccount.countDocuments({ tenant_id: tenantId });
+  if (coaCount === 0) {
+    const { seedTenantChartOfAccounts } = require('../utils/seedCoa');
+    await seedTenantChartOfAccounts(tenantId);
+  }
+
   const context = { payload, params: {} };
   const evaluatedLines = [];
   let totalDebit = new BigNumber(0);
@@ -247,7 +253,7 @@ async function postJournalFromResolvedRule({
     throw new Error(`Simulation failed validation: ${sim.errors.join('; ')}`);
   }
 
-  const journalLines = sim.lines.map(l => ({
+  const journalLines = sim.lines.filter(l => (parseFloat(l.debit || 0) > 0 || parseFloat(l.credit || 0) > 0)).map(l => ({
     account_code: l.account_code,
     debit: l.debit,
     credit: l.credit,

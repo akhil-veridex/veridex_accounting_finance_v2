@@ -32,6 +32,7 @@ router.post('/policies/endorsement/reset', billingController.postResetPolicyEndo
 router.get('/schedules', billingController.getInstallmentSchedules);
 
 // Invoices & Invoice Lines
+router.post('/repair-gl', billingController.postRepairMissingGL);
 router.get('/invoices', billingController.getInvoices);
 router.post('/invoices', billingController.postIssueInvoice);
 router.get('/invoices/:id', billingController.getInvoiceDetail);

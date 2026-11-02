@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const {
   CommissionAgreement,
   CommissionSchedule,
@@ -615,7 +616,7 @@ exports.generateSettlement = async (req, res) => {
 exports.disburseSettlement = async (req, res) => {
   try {
     const { id } = req.params;
-    const { payment_reference } = req.body;
+    const { payment_reference, custom_journal_lines } = req.body || {};
     let useMigrationAdapter = false;
     if (req.body.use_migration_adapter === true || req.headers['x-use-migration-adapter'] === 'true') {
       const authCheck = await authorizeMigrationAdapter(req);
@@ -629,6 +630,7 @@ exports.disburseSettlement = async (req, res) => {
       userId: req.user ? req.user._id : null,
       statementId: id,
       paymentReference: payment_reference || 'ACH-SUMMIT-DISBURSE-001',
+      customJournalLines: custom_journal_lines || null,
       useMigrationAdapter
     });
     return res.json({ status: 'success', data: result });
@@ -640,7 +642,7 @@ exports.disburseSettlement = async (req, res) => {
 exports.disburseBrokerCommission = async (req, res) => {
   try {
     const { id } = req.params;
-    const { payment_reference } = req.body || {};
+    const { payment_reference, custom_journal_lines } = req.body || {};
     const tenantId = req.tenantId;
     const userId = req.user ? req.user._id : null;
 
@@ -670,6 +672,28 @@ exports.disburseBrokerCommission = async (req, res) => {
     });
 
     if (!glJournal) {
+      let brokerLines = [
+        {
+          account_code: '2020',
+          debit: amountBN.toFixed(2),
+          credit: '0.00',
+          memo: `Discharge Broker Commission Payable for ${tx.transaction_number}`
+        },
+        {
+          account_code: '1010',
+          debit: '0.00',
+          credit: amountBN.toFixed(2),
+          memo: 'Broker Commission Payout from Texas § 4053 Premium Trust'
+        }
+      ];
+      if (custom_journal_lines && Array.isArray(custom_journal_lines) && custom_journal_lines.length >= 2) {
+        brokerLines = custom_journal_lines.map(l => ({
+          account_code: l.account_code,
+          debit: parseFloat(l.debit || 0).toFixed(2),
+          credit: parseFloat(l.credit || 0).toFixed(2),
+          memo: l.memo || `Broker Commission Payout for ${tx.transaction_number}`
+        }));
+      }
       const glResult = await legacyDirectPost({
         tenantId,
         userId,
@@ -677,20 +701,7 @@ exports.disburseBrokerCommission = async (req, res) => {
         sourceModule: 'COMMISSIONS_FIDUCIARY',
         referenceId: tx.transaction_number,
         memo: `Retail Broker Commission Payout: ${tx.payee_party_id} on ${tx.policy_reference} (${payRef})`,
-        lines: [
-          {
-            account_code: '2020',
-            debit: amountBN.toFixed(2),
-            credit: '0.00',
-            memo: `Discharge Broker Commission Payable for ${tx.transaction_number}`
-          },
-          {
-            account_code: '1010',
-            debit: '0.00',
-            credit: amountBN.toFixed(2),
-            memo: 'Broker Commission Payout from Texas § 4053 Premium Trust'
-          }
-        ]
+        lines: brokerLines
       });
       glJournal = glResult.journal;
     }
@@ -767,8 +778,15 @@ exports.allocateCommissionShares = async (req, res) => {
 
       if (invoice) {
         policy_reference = invoice.policy_id || policy_reference;
-        if (!installment_premium && invoice.total_amount) {
-          installment_premium = parseFloat(invoice.total_amount.toString());
+        if (!installment_premium) {
+          const InvoiceLine = require('../models/InvoiceLine');
+          const invLines = await InvoiceLine.find({ invoice_id: invoice._id, tenant_id: tenantId });
+          const premiumLines = invLines.filter(l => l.line_type !== 'FEE');
+          if (premiumLines.length > 0) {
+            installment_premium = premiumLines.reduce((sum, l) => sum + parseFloat(l.amount ? l.amount.toString() : 0), 0);
+          } else if (invoice.total_amount) {
+            installment_premium = parseFloat(invoice.total_amount.toString());
+          }
         }
         if (!carrier_name && invoice.carrier_name) carrier_name = invoice.carrier_name;
         if (!broker_name && invoice.broker_name) broker_name = invoice.broker_name;
@@ -855,42 +873,135 @@ exports.allocateCommissionShares = async (req, res) => {
       memo: `Step 1.3: Commission & Carrier Allocation on ${policy_reference} (${invoice_reference}) [Carrier: ${carrier_name}, Broker: ${broker_name}]`
     });
 
-    // Update / seed commission transaction records with actual counterparties
-    await CommissionTransaction.findOneAndUpdate(
-      { tenant_id: tenantId, transaction_number: 'COMM-2026-00001' },
-      {
+    // 3. Update or create commission transaction records dynamically per invoice
+    const CommissionAgreement = require('../models/CommissionAgreement');
+    const CommissionSchedule = require('../models/CommissionSchedule');
+    let agreement = await CommissionAgreement.findOne({ tenant_id: tenantId, status: 'ACTIVE' });
+    let schedule = await CommissionSchedule.findOne({ tenant_id: tenantId, status: 'ACTIVE' });
+
+    // 1. MGA Earned Retained Commission Transaction
+    const mgaIdemKey = `COMM-TX-${tenantId}-${invoice_reference}-MGA-RETAINED`;
+    let txMga = await CommissionTransaction.findOne({ tenant_id: tenantId, idempotency_key: mgaIdemKey });
+    if (!txMga) {
+      const count = await CommissionTransaction.countDocuments({ tenant_id: tenantId });
+      const txNum = `COMM-2026-${String(count + 1).padStart(5, '0')}`;
+      await CommissionTransaction.create({
         tenant_id: tenantId,
-        transaction_number: 'COMM-2026-00001',
+        transaction_number: txNum,
+        agreement_id: agreement ? agreement._id : (new mongoose.Types.ObjectId()),
+        schedule_id: schedule ? schedule._id : (new mongoose.Types.ObjectId()),
+        source_event_id: invoice_reference,
+        source_entity_type: 'INVOICE',
         policy_reference,
         payer_party_id: carrier_id,
         payee_party_id: mga_id,
-        basis_amount: premiumBN.toNumber(),
-        rate_applied: parseFloat(carrier_rate),
-        calculated_amount: parseFloat(carrierAmount),
-        net_retained_amount: parseFloat(mgaAmount),
+        transaction_kind: 'EARNED',
+        basis_amount: mongoose.Types.Decimal128.fromString(premiumBN.toFixed(2)),
+        rate_applied: mongoose.Types.Decimal128.fromString(parseFloat(mga_rate).toFixed(2)),
+        calculated_amount: mongoose.Types.Decimal128.fromString(mgaAmount),
+        net_retained_amount: mongoose.Types.Decimal128.fromString(mgaAmount),
+        currency: 'USD',
+        effective_date: new Date(),
+        accounting_date: new Date(),
         lifecycle_status: 'APPROVED',
-        effective_date: new Date()
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+        idempotency_key: mgaIdemKey,
+        linked_journal_id: postResult.journal._id
+      });
+    } else {
+      await CommissionTransaction.updateOne(
+        { _id: txMga._id },
+        {
+          basis_amount: mongoose.Types.Decimal128.fromString(premiumBN.toFixed(2)),
+          rate_applied: mongoose.Types.Decimal128.fromString(parseFloat(mga_rate).toFixed(2)),
+          calculated_amount: mongoose.Types.Decimal128.fromString(mgaAmount),
+          net_retained_amount: mongoose.Types.Decimal128.fromString(mgaAmount),
+          linked_journal_id: postResult.journal._id
+        }
+      );
+    }
 
-    await CommissionTransaction.findOneAndUpdate(
-      { tenant_id: tenantId, transaction_number: 'COMM-2026-00002' },
-      {
+    // 2. Carrier Share Liability / Withholding Transaction
+    const carrierIdemKey = `COMM-TX-${tenantId}-${invoice_reference}-${carrier_id}`;
+    let txCarrier = await CommissionTransaction.findOne({ tenant_id: tenantId, idempotency_key: carrierIdemKey });
+    if (!txCarrier) {
+      const count = await CommissionTransaction.countDocuments({ tenant_id: tenantId });
+      const txNum = `COMM-2026-${String(count + 1).padStart(5, '0')}`;
+      await CommissionTransaction.create({
         tenant_id: tenantId,
-        transaction_number: 'COMM-2026-00002',
+        transaction_number: txNum,
+        agreement_id: agreement ? agreement._id : (new mongoose.Types.ObjectId()),
+        schedule_id: schedule ? schedule._id : (new mongoose.Types.ObjectId()),
+        source_event_id: invoice_reference,
+        source_entity_type: 'INVOICE',
+        policy_reference,
+        payer_party_id: mga_id,
+        payee_party_id: carrier_id,
+        transaction_kind: 'PAYABLE',
+        basis_amount: mongoose.Types.Decimal128.fromString(premiumBN.toFixed(2)),
+        rate_applied: mongoose.Types.Decimal128.fromString(parseFloat(carrier_rate).toFixed(2)),
+        calculated_amount: mongoose.Types.Decimal128.fromString(carrierAmount),
+        net_retained_amount: mongoose.Types.Decimal128.fromString('0.00'),
+        currency: 'USD',
+        effective_date: new Date(),
+        accounting_date: new Date(),
+        lifecycle_status: 'APPROVED',
+        idempotency_key: carrierIdemKey,
+        linked_journal_id: postResult.journal._id
+      });
+    } else {
+      await CommissionTransaction.updateOne(
+        { _id: txCarrier._id },
+        {
+          payer_party_id: mga_id,
+          payee_party_id: carrier_id,
+          transaction_kind: 'PAYABLE',
+          basis_amount: mongoose.Types.Decimal128.fromString(premiumBN.toFixed(2)),
+          rate_applied: mongoose.Types.Decimal128.fromString(parseFloat(carrier_rate).toFixed(2)),
+          calculated_amount: mongoose.Types.Decimal128.fromString(carrierAmount),
+          linked_journal_id: postResult.journal._id
+        }
+      );
+    }
+
+    // Broker Commission Transaction
+    const brokerIdemKey = `COMM-TX-${tenantId}-${invoice_reference}-${broker_id}`;
+    let txBroker = await CommissionTransaction.findOne({ tenant_id: tenantId, idempotency_key: brokerIdemKey });
+    if (!txBroker) {
+      const count = await CommissionTransaction.countDocuments({ tenant_id: tenantId });
+      const txNum = `COMM-2026-${String(count + 1).padStart(5, '0')}`;
+      await CommissionTransaction.create({
+        tenant_id: tenantId,
+        transaction_number: txNum,
+        agreement_id: agreement ? agreement._id : (new mongoose.Types.ObjectId()),
+        schedule_id: schedule ? schedule._id : (new mongoose.Types.ObjectId()),
+        source_event_id: invoice_reference,
+        source_entity_type: 'INVOICE',
         policy_reference,
         payer_party_id: mga_id,
         payee_party_id: broker_id,
-        basis_amount: premiumBN.toNumber(),
-        rate_applied: parseFloat(broker_rate),
-        calculated_amount: parseFloat(brokerAmount),
-        net_retained_amount: 0,
+        transaction_kind: 'PAYABLE',
+        basis_amount: mongoose.Types.Decimal128.fromString(premiumBN.toFixed(2)),
+        rate_applied: mongoose.Types.Decimal128.fromString(parseFloat(broker_rate).toFixed(2)),
+        calculated_amount: mongoose.Types.Decimal128.fromString(brokerAmount),
+        net_retained_amount: mongoose.Types.Decimal128.fromString('0.00'),
+        currency: 'USD',
+        effective_date: new Date(),
+        accounting_date: new Date(),
         lifecycle_status: 'PAYABLE',
-        effective_date: new Date()
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+        idempotency_key: brokerIdemKey,
+        linked_journal_id: postResult.journal._id
+      });
+    } else {
+      await CommissionTransaction.updateOne(
+        { _id: txBroker._id },
+        {
+          basis_amount: mongoose.Types.Decimal128.fromString(premiumBN.toFixed(2)),
+          rate_applied: mongoose.Types.Decimal128.fromString(parseFloat(broker_rate).toFixed(2)),
+          calculated_amount: mongoose.Types.Decimal128.fromString(brokerAmount),
+          linked_journal_id: postResult.journal._id
+        }
+      );
+    }
 
     // 4. Mark Invoice as ALLOCATED so it is clearly tracked in the system
     if (invoice_reference) {

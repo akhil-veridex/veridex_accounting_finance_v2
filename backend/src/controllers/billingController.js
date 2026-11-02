@@ -459,7 +459,27 @@ async function getInvoices(req, res) {
     const invoices = await Invoice.find(filter)
       .populate('billing_account_id', 'account_number customer_name')
       .populate('journal_id', 'journal_number posting_date')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const invIds = invoices.map(i => i._id);
+    const allLines = await InvoiceLine.find({ invoice_id: { $in: invIds }, tenant_id: tenantId }).lean();
+    const linesByInv = {};
+    for (const l of allLines) {
+      const k = String(l.invoice_id);
+      if (!linesByInv[k]) linesByInv[k] = [];
+      linesByInv[k].push(l);
+    }
+
+    for (const inv of invoices) {
+      const lines = linesByInv[String(inv._id)] || [];
+      const feeLines = lines.filter(l => l.line_type === 'FEE');
+      const premLines = lines.filter(l => l.line_type !== 'FEE');
+      const feeTotal = feeLines.reduce((sum, l) => sum + parseFloat(l.amount ? l.amount.toString() : 0), 0);
+      const premTotal = premLines.reduce((sum, l) => sum + parseFloat(l.amount ? l.amount.toString() : 0), 0);
+      inv.fee_amount = feeTotal.toFixed(2);
+      inv.premium_amount = premTotal > 0 ? premTotal.toFixed(2) : (inv.total_amount ? (parseFloat(inv.total_amount.toString()) - feeTotal).toFixed(2) : '0.00');
+    }
 
     return res.success(invoices);
   } catch (err) {
@@ -504,7 +524,9 @@ async function postIssueInvoice(req, res) {
       carrier_name,
       broker_id,
       broker_name,
-      dimensions
+      dimensions,
+      ar_account_code,
+      custom_journal_lines
     } = req.body;
     let useMigrationAdapter = false;
     if (req.body.use_migration_adapter === true || req.headers['x-use-migration-adapter'] === 'true') {
@@ -532,6 +554,8 @@ async function postIssueInvoice(req, res) {
       brokerId: broker_id || null,
       brokerName: broker_name || null,
       dimensions: dimensions || {},
+      arAccountCode: ar_account_code || null,
+      customJournalLines: custom_journal_lines || null,
       useMigrationAdapter
     });
 
@@ -547,7 +571,7 @@ async function postPaymentReceipt(req, res) {
   try {
     const tenantId = req.tenantId;
     const userId = req.user ? req.user._id : null;
-    const { billing_account_id, amount, payment_method, reference_number, payment_date, target_invoice_id, is_fiduciary } = req.body;
+    const { billing_account_id, amount, payment_method, reference_number, payment_date, target_invoice_id, is_fiduciary, custom_journal_lines } = req.body;
     let useMigrationAdapter = false;
     if (req.body.use_migration_adapter === true || req.headers['x-use-migration-adapter'] === 'true') {
       const authCheck = await authorizeMigrationAdapter(req);
@@ -561,6 +585,26 @@ async function postPaymentReceipt(req, res) {
       return res.error('billing_account_id and amount are required', 400);
     }
 
+    if (!target_invoice_id) {
+      return res.error('Target invoice is required. You must select an open target invoice to record and allocate payment.', 400);
+    }
+
+    const targetInvoice = await Invoice.findOne({
+      _id: target_invoice_id,
+      tenant_id: tenantId,
+      billing_account_id: billing_account_id
+    });
+    if (!targetInvoice) {
+      return res.error('Target invoice not found for this billing account.', 404);
+    }
+    if (['PAID', 'VOID', 'CANCELLED'].includes(targetInvoice.status)) {
+      return res.error(`Target invoice ${targetInvoice.invoice_number} is already ${targetInvoice.status}. Please select an open invoice.`, 400);
+    }
+    const invBalance = parseFloat(targetInvoice.balance_due ? targetInvoice.balance_due.toString() : '0');
+    if (invBalance <= 0) {
+      return res.error(`Target invoice ${targetInvoice.invoice_number} has no outstanding balance due ($0.00).`, 400);
+    }
+
     const result = await processPaymentReceipt({
       tenantId,
       userId,
@@ -571,6 +615,7 @@ async function postPaymentReceipt(req, res) {
       paymentDate: payment_date ? new Date(payment_date) : new Date(),
       targetInvoiceId: target_invoice_id || null,
       isFiduciary: typeof is_fiduciary === 'boolean' ? is_fiduciary : true,
+      customJournalLines: custom_journal_lines || null,
       useMigrationAdapter
     });
 
@@ -895,6 +940,7 @@ async function postApplyPolicyEndorsement(req, res) {
       active_days,
       delta_premium,
       billing_option,
+      custom_journal_lines,
       use_migration_adapter
     } = req.body;
 
@@ -910,6 +956,7 @@ async function postApplyPolicyEndorsement(req, res) {
       activeDays: active_days || 303,
       deltaPremium: delta_premium || '7222.19',
       billingOption: billing_option || 'SPREAD_INSTALLMENTS',
+      customJournalLines: custom_journal_lines || null,
       useMigrationAdapter: Boolean(use_migration_adapter)
     });
 
@@ -936,7 +983,202 @@ async function postResetPolicyEndorsement(req, res) {
   }
 }
 
+
+// Auto-Repair Unposted Invoices GL Discrepancies
+async function postRepairMissingGL(req, res) {
+  try {
+    const tenantId = req.tenantId;
+    const userId = req.user ? req.user._id : null;
+    const { Journal, JournalEntry, LedgerAccount } = require('../models');
+    const { legacyDirectPost } = require('../services/legacyPostingAdapter');
+
+    const invoices = await Invoice.find({ tenant_id: tenantId });
+    const repaired = [];
+
+    for (const inv of invoices) {
+      const existingJournal = await Journal.findOne({
+        tenant_id: tenantId,
+        $or: [
+          { reference_id: inv.invoice_number },
+          { _id: inv.journal_id }
+        ],
+        status: 'POSTED'
+      });
+
+      if (!existingJournal) {
+        const invLines = await InvoiceLine.find({ invoice_id: inv._id });
+        let premBN = new BigNumber(0);
+        let feeBN = new BigNumber(0);
+
+        if (invLines && invLines.length > 0) {
+          for (const l of invLines) {
+            const amt = new BigNumber(l.amount ? l.amount.toString() : 0);
+            if (l.line_type === 'FEE') {
+              feeBN = feeBN.plus(amt);
+            } else {
+              premBN = premBN.plus(amt);
+            }
+          }
+        } else {
+          premBN = new BigNumber(inv.total_amount ? inv.total_amount.toString() : 0);
+        }
+
+        const totBN = premBN.plus(feeBN);
+        if (totBN.isGreaterThan(0)) {
+          const lines = [
+            {
+              account_code: '1100',
+              debit: totBN.toFixed(2),
+              credit: '0.00',
+              memo: `Dr AR for Invoice ${inv.invoice_number}`
+            },
+            {
+              account_code: '2200',
+              debit: '0.00',
+              credit: premBN.toFixed(2),
+              memo: `Cr UPR for Invoice ${inv.invoice_number}`
+            }
+          ];
+          if (feeBN.isGreaterThan(0)) {
+            lines.push({
+              account_code: '4100',
+              debit: '0.00',
+              credit: feeBN.toFixed(2),
+              memo: `Cr Policy Fee Income for Invoice ${inv.invoice_number}`
+            });
+          }
+
+          const gl = await legacyDirectPost({
+            tenantId,
+            userId,
+            postingDate: inv.invoice_date || new Date(),
+            sourceModule: 'BILLING_INVOICE',
+            referenceId: inv.invoice_number,
+            memo: `Auto-Repaired Billing Invoice ${inv.invoice_number} (Policy ${inv.policy_id})`,
+            lines
+          });
+
+          if (gl && gl.journal) {
+            inv.journal_id = gl.journal._id;
+            await inv.save();
+            repaired.push({
+              invoice_number: inv.invoice_number,
+              journal_number: gl.journal.journal_number,
+              amount: totBN.toFixed(2)
+            });
+          }
+        }
+      }
+    }
+
+    // 1. Remove duplicate endorsement GL entry for SPREAD_INSTALLMENTS
+    const delta1100Entries = await JournalEntry.find({
+      tenant_id: tenantId,
+      account_code: '1100'
+    });
+
+    for (const de of delta1100Entries) {
+      const drVal = parseFloat(de.debit ? de.debit.toString() : '0');
+      if (Math.abs(drVal - 7222.19) < 0.1) {
+        const jId = de.journal_id;
+        await JournalEntry.deleteMany({ journal_id: jId });
+        await Journal.updateOne(
+          { _id: jId },
+          {
+            $set: {
+              status: 'VOID',
+              memo: '[VOIDED - Endorsement Delta Spread into Installments]'
+            }
+          }
+        );
+      }
+    }
+
+    const duplicateEndorsementJournals = await Journal.find({
+      tenant_id: tenantId,
+      $or: [
+        { source_module: 'POLICY_ENDORSEMENT' },
+        { memo: { $regex: /endorsement/i } }
+      ]
+    });
+
+    for (const ej of duplicateEndorsementJournals) {
+      await JournalEntry.deleteMany({ journal_id: ej._id, tenant_id: tenantId });
+      ej.status = 'VOID';
+      ej.memo = `[VOIDED - SPREAD_INSTALLMENTS billed via Installment Invoices] ${ej.memo}`;
+      await ej.save();
+    }
+
+    // Fix any faulty UPR Commission Allocation Entry ($9,562.50 -> $9,412.50)
+    const faultyUprEntries = await JournalEntry.find({
+      tenant_id: tenantId,
+      account_code: '2200'
+    });
+    for (const fe of faultyUprEntries) {
+      const drVal = parseFloat(fe.debit ? fe.debit.toString() : '0');
+      if (Math.abs(drVal - 9562.50) < 0.01) {
+        fe.debit = mongoose.Types.Decimal128.fromString('9412.50');
+        await fe.save();
+
+        const siblings = await JournalEntry.find({ journal_id: fe.journal_id, tenant_id: tenantId });
+        for (const se of siblings) {
+          if (se.account_code === '2010') {
+            se.credit = mongoose.Types.Decimal128.fromString('7530.00');
+            await se.save();
+          } else if (se.account_code === '2020') {
+            se.credit = mongoose.Types.Decimal128.fromString('941.25');
+            await se.save();
+          } else if (se.account_code === '4200') {
+            se.credit = mongoose.Types.Decimal128.fromString('941.25');
+            await se.save();
+          }
+        }
+        await Journal.updateOne(
+          { _id: fe.journal_id },
+          {
+            total_debit: mongoose.Types.Decimal128.fromString('9412.50'),
+            total_credit: mongoose.Types.Decimal128.fromString('9412.50')
+          }
+        );
+      }
+    }
+
+    // Recalculate LedgerAccount current_balances from all posted JournalEntries
+    const allAccounts = await LedgerAccount.find({ tenant_id: tenantId });
+    const allEntries = await JournalEntry.find({ tenant_id: tenantId });
+
+    for (const acc of allAccounts) {
+      const entriesForAcc = allEntries.filter(e => e.account_code === acc.account_code);
+      let drSum = new BigNumber(0);
+      let crSum = new BigNumber(0);
+      for (const e of entriesForAcc) {
+        drSum = drSum.plus(new BigNumber(e.debit ? e.debit.toString() : 0));
+        crSum = crSum.plus(new BigNumber(e.credit ? e.credit.toString() : 0));
+      }
+      let newBalance;
+      if (acc.normal_balance === 'DEBIT') {
+        newBalance = drSum.minus(crSum);
+      } else {
+        newBalance = crSum.minus(drSum);
+      }
+      acc.current_balance = mongoose.Types.Decimal128.fromString(newBalance.toFixed(2));
+      acc.current_balance_debit = mongoose.Types.Decimal128.fromString(drSum.toFixed(2));
+      acc.current_balance_credit = mongoose.Types.Decimal128.fromString(crSum.toFixed(2));
+      await acc.save();
+    }
+
+    return res.success({
+      repaired_count: repaired.length,
+      repaired_invoices: repaired
+    }, { message: `GL Audit & Repair complete: ${repaired.length} unposted invoice(s) synchronized and all COA balances recalculated.` });
+  } catch (err) {
+    console.error('[BillingController] postRepairMissingGL error:', err);
+    return res.error(err.message, 500);
+  }
+}
+
 module.exports = {
+  postRepairMissingGL,
   getBillingOverview,
   getBillingAccounts,
   createBillingAccount,

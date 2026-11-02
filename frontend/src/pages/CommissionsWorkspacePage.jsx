@@ -16,9 +16,14 @@ import {
   ChevronRight,
   Sliders,
   Tags,
-  Sparkles
+  Sparkles,
+  BookOpen,
+  Trash2,
+  Receipt,
+  CreditCard
 } from 'lucide-react';
-import { commissionsApi, rulesApi, dimensionsApi, billingApi } from '../services/api';
+import { commissionsApi, rulesApi, dimensionsApi, billingApi, authApi } from '../services/api';
+import ModalClose from '../components/ModalClose';
 
 export default function CommissionsWorkspacePage({ section }) {
   // `section` is driven by the sidebar; without it the page shows its own tab bar.
@@ -43,6 +48,358 @@ export default function CommissionsWorkspacePage({ section }) {
   const [selectedRunId, setSelectedRunId] = useState(null);
   const [settlements, setSettlements] = useState([]);
   const [chainPreview, setChainPreview] = useState(null);
+  const [glAccounts, setGlAccounts] = useState([]);
+
+  const defaultCOA = [
+    { account_code: '1000', account_name: 'Operating Cash', account_type: 'ASSET' },
+    { account_code: '1010', account_name: 'Premium Trust Bank (Texas § 4053)', account_type: 'ASSET' },
+    { account_code: '1020', account_name: 'Cash - Claims Escrow Account', account_type: 'ASSET' },
+    { account_code: '1100', account_name: 'Premium Receivable', account_type: 'ASSET' },
+    { account_code: '2010', account_name: 'Due to Carrier', account_type: 'LIABILITY' },
+    { account_code: '2020', account_name: 'Broker Commission Payable', account_type: 'LIABILITY' },
+    { account_code: '2190', account_name: 'Unapplied Cash Suspense', account_type: 'LIABILITY' },
+    { account_code: '2200', account_name: 'Unearned Premium Reserve (UPR - ASC 944)', account_type: 'LIABILITY' },
+    { account_code: '4000', account_name: 'Earned Premium Revenue', account_type: 'REVENUE' },
+    { account_code: '4100', account_name: 'Policy Fee Income', account_type: 'REVENUE' },
+    { account_code: '4200', account_name: 'MGA Commission Income', account_type: 'REVENUE' }
+  ];
+
+  // Broker Disburse Modal State
+  const [showBrokerModal, setShowBrokerModal] = useState(false);
+  const [selectedBrokerTx, setSelectedBrokerTx] = useState(null);
+  const [brokerPaymentRef, setBrokerPaymentRef] = useState('');
+  const [brokerJournalLines, setBrokerJournalLines] = useState([]);
+
+  // Commission Allocation Modal State
+  const [showAllocationModal, setShowAllocationModal] = useState(false);
+  const [allocationJournalLines, setAllocationJournalLines] = useState([]);
+
+  const openAllocationModal = () => {
+    const prem = parseFloat(allocationForm.installment_premium) || 9412.50;
+    const cRate = parseFloat(allocationForm.carrier_rate) || 80.0;
+    const bRate = parseFloat(allocationForm.broker_rate) || 10.0;
+    const mRate = parseFloat(allocationForm.mga_rate) || 10.0;
+
+    const cAmt = ((prem * cRate) / 100).toFixed(2);
+    const bAmt = ((prem * bRate) / 100).toFixed(2);
+    const mAmt = Math.max(0, prem - parseFloat(cAmt) - parseFloat(bAmt)).toFixed(2);
+
+    const carrierDisplay = allocationForm.carrier_name || 'Summit Mutual Insurance Company';
+    const brokerDisplay = allocationForm.broker_name || 'Brightline Agency';
+    const invRef = allocationForm.invoice_reference || 'INV-2026-00001';
+
+    setAllocationJournalLines([
+      {
+        account_code: '2200',
+        debit: prem.toFixed(2),
+        credit: '0.00',
+        memo: `Dr 2200 UPR released upon payment allocation (${invRef})`
+      },
+      {
+        account_code: '2010',
+        debit: '0.00',
+        credit: cAmt,
+        memo: `Cr 2010 Due to Underwriting Carrier (${carrierDisplay})`
+      },
+      {
+        account_code: '2020',
+        debit: '0.00',
+        credit: bAmt,
+        memo: `Cr 2020 Commission Payable to Retail Broker (${brokerDisplay})`
+      },
+      {
+        account_code: '4200',
+        debit: '0.00',
+        credit: mAmt,
+        memo: 'Cr 4200 MGA Commission Income (Earned Retained)'
+      }
+    ]);
+    setShowAllocationModal(true);
+  };
+
+  const handleAllocationJournalLineChange = (index, field, value) => {
+    setAllocationJournalLines((prev) => {
+      const next = [...prev];
+      const cur = { ...next[index] };
+      if (field === 'account_code') {
+        cur.account_code = value;
+      } else if (field === 'type') {
+        const amt = parseFloat(cur.debit) > 0 ? cur.debit : (cur.credit || '0.00');
+        if (value === 'DEBIT') {
+          cur.debit = amt;
+          cur.credit = '0.00';
+        } else {
+          cur.credit = amt;
+          cur.debit = '0.00';
+        }
+      } else if (field === 'amount') {
+        if (parseFloat(cur.debit) > 0 || (parseFloat(cur.credit) === 0 && !cur.credit)) {
+          cur.debit = value;
+          cur.credit = '0.00';
+        } else {
+          cur.credit = value;
+          cur.debit = '0.00';
+        }
+      } else if (field === 'memo') {
+        cur.memo = value;
+      }
+      next[index] = cur;
+      return next;
+    });
+  };
+
+  const addAllocationJournalLine = () => {
+    setAllocationJournalLines((prev) => [
+      ...prev,
+      { account_code: '4200', debit: '0.00', credit: '0.00', memo: 'Cr Additional Allocation Line' }
+    ]);
+  };
+
+  const removeAllocationJournalLine = (index) => {
+    if (allocationJournalLines.length <= 2) return;
+    setAllocationJournalLines((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const confirmAllocateShares = async (e) => {
+    e.preventDefault();
+    try {
+      setAllocating(true);
+      setError(null);
+
+      const totalDebits = allocationJournalLines.reduce((sum, l) => sum + (parseFloat(l.debit) || 0), 0);
+      const totalCredits = allocationJournalLines.reduce((sum, l) => sum + (parseFloat(l.credit) || 0), 0);
+      if (Math.abs(totalDebits - totalCredits) > 0.01) {
+        throw new Error(`General Ledger Journal Entry is out of balance! Debits (${totalDebits.toFixed(2)}) must equal Credits (${totalCredits.toFixed(2)}).`);
+      }
+
+      const customDims = {};
+      if (allocationForm.cost_center) customDims.cost_center = allocationForm.cost_center;
+      if (allocationForm.company_code) customDims.company_code = allocationForm.company_code;
+      if (allocationForm.custom_dimension_key && allocationForm.custom_dimension_value) {
+        customDims[allocationForm.custom_dimension_key.trim()] = allocationForm.custom_dimension_value.trim();
+      }
+
+      const payload = {
+        policy_reference: allocationForm.policy_reference,
+        invoice_reference: allocationForm.invoice_reference,
+        installment_premium: parseFloat(allocationForm.installment_premium) || 9412.50,
+        carrier_id: allocationForm.carrier_id || undefined,
+        carrier_name: allocationForm.carrier_name || undefined,
+        broker_id: allocationForm.broker_id || undefined,
+        broker_name: allocationForm.broker_name || undefined,
+        carrier_rate: parseFloat(allocationForm.carrier_rate) || 80.0,
+        broker_rate: parseFloat(allocationForm.broker_rate) || 10.0,
+        mga_rate: parseFloat(allocationForm.mga_rate) || 10.0,
+        cost_center: allocationForm.cost_center || 'CC-OPS',
+        company_code: allocationForm.company_code || 'COMP-001',
+        dimensions: customDims,
+        custom_journal_lines: allocationJournalLines
+      };
+
+      const res = await commissionsApi.allocateShares(payload);
+      setSuccessMsg(res.message || 'Commission & Carrier Share allocated successfully to General Ledger!');
+      setShowAllocationModal(false);
+      loadSubtabData('fiduciary');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAllocating(false);
+    }
+  };
+
+  // Settlement Disburse Modal State
+  const [showSettlementModal, setShowSettlementModal] = useState(false);
+  const [selectedSettlementStmt, setSelectedSettlementStmt] = useState(null);
+  const [settlementPaymentRef, setSettlementPaymentRef] = useState('');
+  const [settlementJournalLines, setSettlementJournalLines] = useState([]);
+
+  useEffect(() => {
+    authApi.getAccounts().then(res => {
+      if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
+        setGlAccounts(res.data);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const openBrokerDisburseModal = (tx) => {
+    setSelectedBrokerTx(tx);
+    const amt = Number(tx.calculated_amount?.$numberDecimal || tx.calculated_amount || 0).toFixed(2);
+    setBrokerPaymentRef(`ACH-BROKER-${Date.now()}`);
+    setBrokerJournalLines([
+      {
+        account_code: '2020',
+        debit: amt,
+        credit: '0.00',
+        memo: `Discharge Broker Commission Payable for ${tx.transaction_number}`
+      },
+      {
+        account_code: '1010',
+        debit: '0.00',
+        credit: amt,
+        memo: 'Broker Commission Payout from Texas § 4053 Premium Trust'
+      }
+    ]);
+    setShowBrokerModal(true);
+  };
+
+  const handleBrokerJournalLineChange = (index, field, value) => {
+    setBrokerJournalLines((prev) => {
+      const next = [...prev];
+      const cur = { ...next[index] };
+      if (field === 'account_code') {
+        cur.account_code = value;
+      } else if (field === 'type') {
+        const amt = parseFloat(cur.debit) > 0 ? cur.debit : (cur.credit || '0.00');
+        if (value === 'DEBIT') {
+          cur.debit = amt;
+          cur.credit = '0.00';
+        } else {
+          cur.credit = amt;
+          cur.debit = '0.00';
+        }
+      } else if (field === 'amount') {
+        if (parseFloat(cur.debit) > 0 || (parseFloat(cur.credit) === 0 && !cur.credit)) {
+          cur.debit = value;
+          cur.credit = '0.00';
+        } else {
+          cur.credit = value;
+          cur.debit = '0.00';
+        }
+      } else if (field === 'memo') {
+        cur.memo = value;
+      }
+      next[index] = cur;
+      return next;
+    });
+  };
+
+  const addBrokerJournalLine = () => {
+    setBrokerJournalLines((prev) => [
+      ...prev,
+      { account_code: '1010', debit: '0.00', credit: '0.00', memo: 'Cr Additional Line' }
+    ]);
+  };
+
+  const removeBrokerJournalLine = (index) => {
+    if (brokerJournalLines.length <= 2) return;
+    setBrokerJournalLines((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const confirmDisburseBroker = async (e) => {
+    e.preventDefault();
+    if (!selectedBrokerTx) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const totalDebits = brokerJournalLines.reduce((sum, l) => sum + (parseFloat(l.debit) || 0), 0);
+      const totalCredits = brokerJournalLines.reduce((sum, l) => sum + (parseFloat(l.credit) || 0), 0);
+      if (Math.abs(totalDebits - totalCredits) > 0.01) {
+        throw new Error(`General Ledger Journal Entry is out of balance! Debits (${totalDebits.toFixed(2)}) must equal Credits (${totalCredits.toFixed(2)}).`);
+      }
+      const res = await commissionsApi.disburseBrokerCommission(selectedBrokerTx._id, {
+        payment_reference: brokerPaymentRef,
+        custom_journal_lines: brokerJournalLines
+      });
+      setSuccessMsg(res.message || 'Broker commission disbursed successfully via ACH!');
+      setShowBrokerModal(false);
+      loadSubtabData('transactions');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openSettlementDisburseModal = (stmt) => {
+    setSelectedSettlementStmt(stmt);
+    const cleanCarrier = (stmt.carrier_name || 'CARRIER').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
+    const netDue = Number(stmt.net_due_carrier?.$numberDecimal || stmt.net_due_carrier || 0).toFixed(2);
+    setSettlementPaymentRef(`ACH-${cleanCarrier}-DISBURSE-${Date.now().toString().slice(-4)}`);
+    setSettlementJournalLines([
+      {
+        account_code: '2010',
+        debit: netDue,
+        credit: '0.00',
+        memo: `Discharge Due to Carrier for ${stmt.statement_number}`
+      },
+      {
+        account_code: '1010',
+        debit: '0.00',
+        credit: netDue,
+        memo: 'Disbursement from Texas § 4053 Premium Trust'
+      }
+    ]);
+    setShowSettlementModal(true);
+  };
+
+  const handleSettlementJournalLineChange = (index, field, value) => {
+    setSettlementJournalLines((prev) => {
+      const next = [...prev];
+      const cur = { ...next[index] };
+      if (field === 'account_code') {
+        cur.account_code = value;
+      } else if (field === 'type') {
+        const amt = parseFloat(cur.debit) > 0 ? cur.debit : (cur.credit || '0.00');
+        if (value === 'DEBIT') {
+          cur.debit = amt;
+          cur.credit = '0.00';
+        } else {
+          cur.credit = amt;
+          cur.debit = '0.00';
+        }
+      } else if (field === 'amount') {
+        if (parseFloat(cur.debit) > 0 || (parseFloat(cur.credit) === 0 && !cur.credit)) {
+          cur.debit = value;
+          cur.credit = '0.00';
+        } else {
+          cur.credit = value;
+          cur.debit = '0.00';
+        }
+      } else if (field === 'memo') {
+        cur.memo = value;
+      }
+      next[index] = cur;
+      return next;
+    });
+  };
+
+  const addSettlementJournalLine = () => {
+    setSettlementJournalLines((prev) => [
+      ...prev,
+      { account_code: '1010', debit: '0.00', credit: '0.00', memo: 'Cr Additional Line' }
+    ]);
+  };
+
+  const removeSettlementJournalLine = (index) => {
+    if (settlementJournalLines.length <= 2) return;
+    setSettlementJournalLines((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const confirmDisburseSettlement = async (e) => {
+    e.preventDefault();
+    if (!selectedSettlementStmt) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const totalDebits = settlementJournalLines.reduce((sum, l) => sum + (parseFloat(l.debit) || 0), 0);
+      const totalCredits = settlementJournalLines.reduce((sum, l) => sum + (parseFloat(l.credit) || 0), 0);
+      if (Math.abs(totalDebits - totalCredits) > 0.01) {
+        throw new Error(`General Ledger Journal Entry is out of balance! Debits (${totalDebits.toFixed(2)}) must equal Credits (${totalCredits.toFixed(2)}).`);
+      }
+      const res = await commissionsApi.disburseSettlement(selectedSettlementStmt._id, {
+        payment_reference: settlementPaymentRef,
+        custom_journal_lines: settlementJournalLines
+      });
+      setSuccessMsg(`Carrier Settlement disbursed from Texas § 4053 Trust! Journal #${res.data?.journal ? res.data.journal.journal_number : 'JE-DISBURSED'} posted.`);
+      setShowSettlementModal(false);
+      loadSubtabData('settlements');
+      loadSettlementPreview(settlementForm.carrier_party_id, settlementForm.period);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Forms & Modal states
   const [newAgreement, setNewAgreement] = useState({
@@ -202,6 +559,18 @@ export default function CommissionsWorkspacePage({ section }) {
         }
         if (invRes && invRes.data) {
           setInvoicesList(invRes.data);
+          const unallocated = invRes.data.filter(i => !(i.allocation_status === 'ALLOCATED' || i.is_allocated));
+          const target = unallocated.length > 0 ? unallocated[0] : invRes.data[0];
+          if (target) {
+            setAllocationForm(prev => ({
+              ...prev,
+              invoice_reference: target.invoice_number,
+              policy_reference: target.policy_id || prev.policy_reference,
+              installment_premium: parseFloat(target.premium_amount || (target.total_amount?.$numberDecimal || target.total_amount || 9412.50)),
+              carrier_name: target.carrier_name || prev.carrier_name,
+              broker_name: target.broker_name || prev.broker_name
+            }));
+          }
         }
         const sRules = (rulesRes.data || []).filter(r => r.event_code === 'fiduciary.sweep.executed');
         setPublishedSweepRules(sRules);
@@ -840,7 +1209,26 @@ export default function CommissionsWorkspacePage({ section }) {
                     <tr key={tx._id} className="hover:bg-slate-800/30">
                       <td className="py-2.5 font-bold text-brand-400">{tx.transaction_number}</td>
                       <td className="text-slate-300">{tx.policy_reference}</td>
-                      <td className="text-slate-400">{tx.payer_party_id} → {tx.payee_party_id}</td>
+                      <td className="text-slate-400">
+                        <div className="flex items-center space-x-1.5">
+                          <span>{tx.payer_party_id} → {tx.payee_party_id}</span>
+                          {(tx.idempotency_key?.includes('MGA-RETAINED') || (tx.payee_party_id && tx.payee_party_id.includes('MGA'))) && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] bg-brand-500/10 text-brand-500 font-bold border border-brand-500/20">
+                              MGA Comm
+                            </span>
+                          )}
+                          {(tx.lifecycle_status === 'PAYABLE' || (tx.payee_party_id && tx.payee_party_id.includes('BROKER'))) && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] bg-amber-500/10 text-amber-500 font-bold border border-amber-500/20">
+                              Broker Comm
+                            </span>
+                          )}
+                          {((tx.idempotency_key && tx.idempotency_key.includes('CARRIER')) || (tx.payee_party_id && tx.payee_party_id.includes('CARRIER'))) && (!tx.idempotency_key || !tx.idempotency_key.includes('MGA')) && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] bg-blue-500/10 text-blue-500 font-bold border border-blue-500/20">
+                              Carrier Share
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="text-slate-200">${tx.basis_amount?.$numberDecimal || tx.basis_amount}</td>
                       <td className="text-slate-400">{tx.rate_applied?.$numberDecimal || tx.rate_applied}%</td>
                       <td className="text-emerald-400 font-bold">${tx.calculated_amount?.$numberDecimal || tx.calculated_amount}</td>
@@ -859,7 +1247,7 @@ export default function CommissionsWorkspacePage({ section }) {
                         {tx.lifecycle_status === 'PAYABLE' ? (
                           <button
                             type="button"
-                            onClick={() => handleDisburseBroker(tx._id)}
+                            onClick={() => openBrokerDisburseModal(tx)}
                             disabled={loading}
                             className="px-2.5 py-1 rounded bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-semibold transition shadow-sm shadow-purple-500/20"
                           >
@@ -910,7 +1298,7 @@ export default function CommissionsWorkspacePage({ section }) {
               </div>
               <button
                 type="button"
-                onClick={handleAllocateShares}
+                onClick={openAllocationModal}
                 disabled={allocating}
                 className="px-4 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs transition disabled:opacity-50 shadow-lg shadow-brand-500/25 flex items-center space-x-2 shrink-0 cursor-pointer"
               >
@@ -937,7 +1325,7 @@ export default function CommissionsWorkspacePage({ section }) {
                             ...prev,
                             invoice_reference: sel.invoice_number,
                             policy_reference: sel.policy_id || prev.policy_reference,
-                            installment_premium: parseFloat(sel.total_amount?.$numberDecimal || sel.total_amount || 9412.50),
+                            installment_premium: parseFloat(sel.premium_amount || (sel.total_amount?.$numberDecimal || sel.total_amount || 9412.50)),
                             carrier_name: sel.carrier_name || prev.carrier_name,
                             broker_name: sel.broker_name || prev.broker_name
                           }));
@@ -2161,11 +2549,7 @@ export default function CommissionsWorkspacePage({ section }) {
                       <td>
                         {s.status !== 'PAID' ? (
                           <button
-                            onClick={() => handleDisburseSettlement(
-                              s._id,
-                              s.carrier_name,
-                              s.net_due_carrier?.$numberDecimal || s.net_due_carrier
-                            )}
+                            onClick={() => openSettlementDisburseModal(s)}
                             disabled={disbursingStatementId === s._id}
                             className="flex items-center space-x-1 px-2.5 py-1 rounded bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-semibold transition"
                           >
@@ -2187,6 +2571,620 @@ export default function CommissionsWorkspacePage({ section }) {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+      {/* MODAL: Disburse Broker Commission via ACH with JE Verification */}
+      {showBrokerModal && selectedBrokerTx && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-2xl w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                  <BookOpen className="w-4 h-4 text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Disburse Broker Commission &amp; General Ledger Impact</h3>
+                  <p className="text-xs text-slate-400">ACH disbursement from Texas § 4053 Premium Trust to Retail Producer</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBrokerModal(false)}
+                className="text-slate-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={confirmDisburseBroker} className="space-y-3 text-xs">
+              <div className="grid grid-cols-3 gap-3 p-3 bg-slate-850 rounded-lg border border-slate-750">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-mono">Transaction #</span>
+                  <span className="text-white font-mono font-bold">{selectedBrokerTx.transaction_number}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-mono">Payee Broker</span>
+                  <span className="text-purple-300 font-semibold">{selectedBrokerTx.payee_party_id}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-mono">Commission Amount</span>
+                  <span className="text-emerald-400 font-mono font-bold text-sm">
+                    ${Number(selectedBrokerTx.calculated_amount?.$numberDecimal || selectedBrokerTx.calculated_amount || 0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">ACH / Bank Payment Reference</label>
+                <input
+                  type="text"
+                  required
+                  value={brokerPaymentRef}
+                  onChange={(e) => setBrokerPaymentRef(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white font-mono"
+                />
+              </div>
+
+              {/* Double-Entry GL Verification */}
+              <div className="p-3.5 bg-slate-950/80 rounded-lg border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <BookOpen className="w-3.5 h-3.5 text-purple-400" />
+                    <span className="text-xs font-semibold text-slate-200">
+                      Double-Entry GL Verification &amp; Posting Rule
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/10 text-purple-400 border border-purple-500/30">
+                      RULE_COMMISSION_DISBURSED
+                    </span>
+                    <button
+                      type="button"
+                      onClick={addBrokerJournalLine}
+                      className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-sans font-medium flex items-center space-x-1 border border-slate-750 transition"
+                    >
+                      <Plus className="w-3 h-3 text-purple-400" />
+                      <span>Add Line</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {brokerJournalLines.map((line, idx) => {
+                    const isDebit = parseFloat(line.debit) > 0;
+                    const amountVal = isDebit ? line.debit : line.credit;
+                    const coaList = glAccounts.length > 0 ? glAccounts : defaultCOA;
+
+                    return (
+                      <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+                        <div className="col-span-5">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">GL Account</label>
+                          <select
+                            required
+                            value={line.account_code}
+                            onChange={(e) => handleBrokerJournalLineChange(idx, 'account_code', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-white font-mono focus:border-purple-500 focus:outline-none"
+                          >
+                            {coaList.map((acc) => (
+                              <option key={acc._id || acc.account_code} value={acc.account_code}>
+                                {acc.account_code} — {acc.account_name} ({acc.account_type})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Type</label>
+                          <select
+                            value={isDebit ? 'DEBIT' : 'CREDIT'}
+                            onChange={(e) => handleBrokerJournalLineChange(idx, 'type', e.target.value)}
+                            className={`w-full px-2 py-1.5 rounded text-xs font-semibold font-mono focus:outline-none border ${
+                              isDebit
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                            }`}
+                          >
+                            <option value="DEBIT">Dr (Debit)</option>
+                            <option value="CREDIT">Cr (Credit)</option>
+                          </select>
+                        </div>
+
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Amount ($)</label>
+                          <input
+                            type="text"
+                            required
+                            value={amountVal}
+                            onChange={(e) => handleBrokerJournalLineChange(idx, 'amount', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-white font-mono font-semibold focus:border-purple-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Line Memo</label>
+                          <input
+                            type="text"
+                            value={line.memo || ''}
+                            onChange={(e) => handleBrokerJournalLineChange(idx, 'memo', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-300 focus:border-purple-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="col-span-1 text-center pt-3">
+                          <button
+                            type="button"
+                            onClick={() => removeBrokerJournalLine(idx)}
+                            disabled={brokerJournalLines.length <= 2}
+                            className="text-slate-500 hover:text-rose-400 text-xs disabled:opacity-20 cursor-pointer transition p-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs font-mono">
+                  <div className="flex items-center space-x-4">
+                    <span className="text-emerald-400">Total Debits: <strong>${brokerJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0).toFixed(2)}</strong></span>
+                    <span className="text-purple-400">Total Credits: <strong>${brokerJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0).toFixed(2)}</strong></span>
+                  </div>
+
+                  {(() => {
+                    const d = brokerJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0);
+                    const c = brokerJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
+                    const diff = Math.abs(d - c);
+                    const balanced = diff < 0.01 && d > 0;
+
+                    return balanced ? (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-sans font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>✓ Balanced &amp; Ready to Post</span>
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-sans font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center space-x-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>⚠ Imbalance: ${diff.toFixed(2)}</span>
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowBrokerModal(false)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || Math.abs(brokerJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0) - brokerJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0)) > 0.01}
+                  className={`px-4 py-1.5 rounded font-semibold text-white flex items-center space-x-1.5 shadow-sm transition ${
+                    loading || Math.abs(brokerJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0) - brokerJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0)) > 0.01
+                      ? 'bg-slate-700 text-slate-500 cursor-not-allowed opacity-60'
+                      : 'bg-purple-600 hover:bg-purple-500 cursor-pointer'
+                  }`}
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>{loading ? 'Disbursing...' : 'Disburse Broker via ACH'}</span>
+                </button>
+              </div>
+            </form>
+            <ModalClose onClick={() => setShowBrokerModal(false)} />
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Disburse Carrier Settlement with JE Verification */}
+      {showSettlementModal && selectedSettlementStmt && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-2xl w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-center">
+                  <BookOpen className="w-4 h-4 text-brand-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Disburse Carrier Remittance &amp; General Ledger Impact</h3>
+                  <p className="text-xs text-slate-400">ACH remittance discharge from Texas § 4053 Premium Trust to Risk Carrier</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSettlementModal(false)}
+                className="text-slate-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={confirmDisburseSettlement} className="space-y-3 text-xs">
+              <div className="grid grid-cols-4 gap-3 p-3 bg-slate-850 rounded-lg border border-slate-750">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-mono">Statement #</span>
+                  <span className="text-white font-mono font-bold">{selectedSettlementStmt.statement_number}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-mono">Carrier</span>
+                  <span className="text-slate-200 font-semibold truncate">{selectedSettlementStmt.carrier_name}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-mono">Period</span>
+                  <span className="text-slate-300 font-mono">{selectedSettlementStmt.statement_period}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-mono">Net Remittance</span>
+                  <span className="text-emerald-400 font-mono font-bold text-sm">
+                    ${Number(selectedSettlementStmt.net_due_carrier?.$numberDecimal || selectedSettlementStmt.net_due_carrier || 0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">ACH / Wire Payment Reference</label>
+                <input
+                  type="text"
+                  required
+                  value={settlementPaymentRef}
+                  onChange={(e) => setSettlementPaymentRef(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white font-mono"
+                />
+              </div>
+
+              {/* Double-Entry GL Verification */}
+              <div className="p-3.5 bg-slate-950/80 rounded-lg border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <BookOpen className="w-3.5 h-3.5 text-brand-400" />
+                    <span className="text-xs font-semibold text-slate-200">
+                      Double-Entry GL Verification &amp; Posting Rule
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-brand-500/10 text-brand-400 border border-brand-500/30">
+                      RULE_SETTLEMENT_DISBURSED
+                    </span>
+                    <button
+                      type="button"
+                      onClick={addSettlementJournalLine}
+                      className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-sans font-medium flex items-center space-x-1 border border-slate-750 transition"
+                    >
+                      <Plus className="w-3 h-3 text-brand-400" />
+                      <span>Add Line</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {settlementJournalLines.map((line, idx) => {
+                    const isDebit = parseFloat(line.debit) > 0;
+                    const amountVal = isDebit ? line.debit : line.credit;
+                    const coaList = glAccounts.length > 0 ? glAccounts : defaultCOA;
+
+                    return (
+                      <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+                        <div className="col-span-5">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">GL Account</label>
+                          <select
+                            required
+                            value={line.account_code}
+                            onChange={(e) => handleSettlementJournalLineChange(idx, 'account_code', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-white font-mono focus:border-brand-500 focus:outline-none"
+                          >
+                            {coaList.map((acc) => (
+                              <option key={acc._id || acc.account_code} value={acc.account_code}>
+                                {acc.account_code} — {acc.account_name} ({acc.account_type})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Type</label>
+                          <select
+                            value={isDebit ? 'DEBIT' : 'CREDIT'}
+                            onChange={(e) => handleSettlementJournalLineChange(idx, 'type', e.target.value)}
+                            className={`w-full px-2 py-1.5 rounded text-xs font-semibold font-mono focus:outline-none border ${
+                              isDebit
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                            }`}
+                          >
+                            <option value="DEBIT">Dr (Debit)</option>
+                            <option value="CREDIT">Cr (Credit)</option>
+                          </select>
+                        </div>
+
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Amount ($)</label>
+                          <input
+                            type="text"
+                            required
+                            value={amountVal}
+                            onChange={(e) => handleSettlementJournalLineChange(idx, 'amount', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-white font-mono font-semibold focus:border-brand-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Line Memo</label>
+                          <input
+                            type="text"
+                            value={line.memo || ''}
+                            onChange={(e) => handleSettlementJournalLineChange(idx, 'memo', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-300 focus:border-brand-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="col-span-1 text-center pt-3">
+                          <button
+                            type="button"
+                            onClick={() => removeSettlementJournalLine(idx)}
+                            disabled={settlementJournalLines.length <= 2}
+                            className="text-slate-500 hover:text-rose-400 text-xs disabled:opacity-20 cursor-pointer transition p-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs font-mono">
+                  <div className="flex items-center space-x-4">
+                    <span className="text-emerald-400">Total Debits: <strong>${settlementJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0).toFixed(2)}</strong></span>
+                    <span className="text-purple-400">Total Credits: <strong>${settlementJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0).toFixed(2)}</strong></span>
+                  </div>
+
+                  {(() => {
+                    const d = settlementJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0);
+                    const c = settlementJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
+                    const diff = Math.abs(d - c);
+                    const balanced = diff < 0.01 && d > 0;
+
+                    return balanced ? (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-sans font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>✓ Balanced &amp; Ready to Post</span>
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-sans font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center space-x-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>⚠ Imbalance: ${diff.toFixed(2)}</span>
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowSettlementModal(false)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || Math.abs(settlementJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0) - settlementJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0)) > 0.01}
+                  className={`px-4 py-1.5 rounded font-semibold text-white flex items-center space-x-1.5 shadow-sm transition ${
+                    loading || Math.abs(settlementJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0) - settlementJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0)) > 0.01
+                      ? 'bg-slate-700 text-slate-500 cursor-not-allowed opacity-60'
+                      : 'bg-brand-600 hover:bg-brand-500 cursor-pointer'
+                  }`}
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>{loading ? 'Disbursing...' : 'Disburse Carrier Remittance via ACH'}</span>
+                </button>
+              </div>
+            </form>
+            <ModalClose onClick={() => setShowSettlementModal(false)} />
+          </div>
+        </div>
+      )}
+      {/* MODAL: Allocate Commission & Carrier Shares with Editable JE Lines */}
+      {showAllocationModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-3xl w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-center">
+                  <BookOpen className="w-4 h-4 text-brand-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Commission &amp; Carrier Share Allocation &amp; GL Impact</h3>
+                  <p className="text-xs text-slate-400">Reclassify collected Unearned Premium Reserve (UPR) into Carrier, Broker &amp; MGA Payables</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAllocationModal(false)}
+                className="text-slate-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={confirmAllocateShares} className="space-y-3 text-xs">
+              <div className="grid grid-cols-4 gap-3 p-3 bg-slate-850 rounded-lg border border-slate-750">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-mono">Invoice Reference</span>
+                  <span className="text-white font-mono font-bold">{allocationForm.invoice_reference || 'INV-2026-00001'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-mono">Policy Ref</span>
+                  <span className="text-slate-200 font-mono font-semibold">{allocationForm.policy_reference || 'POL-TX-8821'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-mono">Carrier &amp; Broker</span>
+                  <span className="text-slate-300 truncate block">{allocationForm.carrier_name || 'Summit Mutual'} / {allocationForm.broker_name || 'Brightline Agency'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-mono">Gross Premium Basis</span>
+                  <span className="text-emerald-400 font-mono font-bold text-sm">
+                    ${parseFloat(allocationForm.installment_premium || 9412.50).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Double-Entry GL Lines Table */}
+              <div className="p-3.5 bg-slate-950/80 rounded-lg border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <BookOpen className="w-3.5 h-3.5 text-brand-400" />
+                    <span className="text-xs font-semibold text-slate-200">
+                      Double-Entry GL Verification &amp; Posting Rule
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-brand-500/10 text-brand-400 border border-brand-500/30">
+                      RULE_COMMISSION_ALLOCATED
+                    </span>
+                    <button
+                      type="button"
+                      onClick={addAllocationJournalLine}
+                      className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-sans font-medium flex items-center space-x-1 border border-slate-750 transition"
+                    >
+                      <Plus className="w-3 h-3 text-brand-400" />
+                      <span>Add Line</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {allocationJournalLines.map((line, idx) => {
+                    const isDebit = parseFloat(line.debit) > 0;
+                    const amountVal = isDebit ? line.debit : line.credit;
+                    const coaList = glAccounts.length > 0 ? glAccounts : defaultCOA;
+
+                    return (
+                      <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+                        <div className="col-span-5">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">GL Account (Code &amp; Name)</label>
+                          <select
+                            required
+                            value={line.account_code}
+                            onChange={(e) => handleAllocationJournalLineChange(idx, 'account_code', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-white font-mono focus:border-brand-500 focus:outline-none"
+                          >
+                            {coaList.map((acc) => (
+                              <option key={acc._id || acc.account_code} value={acc.account_code}>
+                                {acc.account_code} — {acc.account_name} ({acc.account_type})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Type</label>
+                          <select
+                            value={isDebit ? 'DEBIT' : 'CREDIT'}
+                            onChange={(e) => handleAllocationJournalLineChange(idx, 'type', e.target.value)}
+                            className={`w-full px-2 py-1.5 rounded text-xs font-semibold font-mono focus:outline-none border ${
+                              isDebit
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                            }`}
+                          >
+                            <option value="DEBIT">Dr (Debit)</option>
+                            <option value="CREDIT">Cr (Credit)</option>
+                          </select>
+                        </div>
+
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Amount ($)</label>
+                          <input
+                            type="text"
+                            required
+                            value={amountVal}
+                            onChange={(e) => handleAllocationJournalLineChange(idx, 'amount', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-white font-mono font-semibold focus:border-brand-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Line Memo</label>
+                          <input
+                            type="text"
+                            value={line.memo || ''}
+                            onChange={(e) => handleAllocationJournalLineChange(idx, 'memo', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-300 focus:border-brand-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="col-span-1 text-center pt-3">
+                          <button
+                            type="button"
+                            onClick={() => removeAllocationJournalLine(idx)}
+                            disabled={allocationJournalLines.length <= 2}
+                            className="text-slate-500 hover:text-rose-400 text-xs disabled:opacity-20 cursor-pointer transition p-1"
+                            title={allocationJournalLines.length <= 2 ? 'Minimum 2 journal lines required' : 'Delete line'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs font-mono">
+                  <div className="flex items-center space-x-4">
+                    <span className="text-emerald-400">Total Debits: <strong>${allocationJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0).toFixed(2)}</strong></span>
+                    <span className="text-purple-400">Total Credits: <strong>${allocationJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0).toFixed(2)}</strong></span>
+                  </div>
+
+                  {(() => {
+                    const d = allocationJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0);
+                    const c = allocationJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
+                    const diff = Math.abs(d - c);
+                    const balanced = diff < 0.01 && d > 0;
+
+                    return balanced ? (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-sans font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>✓ Balanced &amp; Ready to Post</span>
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-sans font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center space-x-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>⚠ Imbalance: ${diff.toFixed(2)}</span>
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAllocationModal(false)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={allocating || Math.abs(allocationJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0) - allocationJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0)) > 0.01}
+                  className={`px-4 py-1.5 rounded font-semibold text-white flex items-center space-x-1.5 shadow-sm transition ${
+                    allocating || Math.abs(allocationJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0) - allocationJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0)) > 0.01
+                      ? 'bg-slate-700 text-slate-500 cursor-not-allowed opacity-60'
+                      : 'bg-brand-600 hover:bg-brand-500 cursor-pointer'
+                  }`}
+                >
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>{allocating ? 'Posting...' : 'Confirm & Post Allocation Journal'}</span>
+                </button>
+              </div>
+            </form>
+            <ModalClose onClick={() => setShowAllocationModal(false)} />
           </div>
         </div>
       )}

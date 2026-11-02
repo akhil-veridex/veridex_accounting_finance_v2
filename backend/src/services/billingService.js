@@ -221,7 +221,9 @@ async function issueInvoice({
   useEventPipeline = null,
   useMigrationAdapter = false,
   correlationId = null,
-  dispatchImmediately = null
+  dispatchImmediately = null,
+  arAccountCode = null,
+  customJournalLines = null
 }) {
   const isLegacy = await shouldUseLegacyAdapter({
     tenantId,
@@ -270,29 +272,39 @@ async function issueInvoice({
 
     let lGlResult = null;
     if (isLegacy && glPostAmountBN.isGreaterThan(0)) {
-      const journalLines = [
-        {
-          account_code: '1100',
-          debit: glPostAmountBN.toFixed(2),
-          credit: '0.00',
-          memo: `Dr AR for Invoice ${invoiceNumber}`
-        }
-      ];
+      let journalLines = [];
+      if (Array.isArray(customJournalLines) && customJournalLines.length >= 2) {
+        journalLines = customJournalLines.map((jl) => ({
+          account_code: String(jl.account_code),
+          debit: new BigNumber(jl.debit || 0).toFixed(2),
+          credit: new BigNumber(jl.credit || 0).toFixed(2),
+          memo: jl.memo || jl.description || `Line for Invoice ${invoiceNumber}`
+        }));
+      } else {
+        journalLines = [
+          {
+            account_code: arAccountCode || '1100',
+            debit: glPostAmountBN.toFixed(2),
+            credit: '0.00',
+            memo: `Dr AR for Invoice ${invoiceNumber}`
+          }
+        ];
 
-      for (const l of lines) {
-        const lineAmt = new BigNumber(l.amount.toString());
-        // If line is premium and delta was already booked, adjust credit to 2200
-        const creditAmt = (l.line_type !== 'FEE' && deltaAlreadyBooked.isGreaterThan(0))
-          ? lineAmt.minus(deltaAlreadyBooked).dp(2)
-          : lineAmt;
+        for (const l of lines) {
+          const lineAmt = new BigNumber(l.amount.toString());
+          // If line is premium and delta was already booked, adjust credit to 2200
+          const creditAmt = (l.line_type !== 'FEE' && deltaAlreadyBooked.isGreaterThan(0))
+            ? lineAmt.minus(deltaAlreadyBooked).dp(2)
+            : lineAmt;
 
-        if (creditAmt.isGreaterThan(0)) {
-          journalLines.push({
-            account_code: l.ledger_account_code || (l.line_type === 'FEE' ? '4100' : '2200'),
-            debit: '0.00',
-            credit: creditAmt.toFixed(2),
-            memo: `Cr ${l.description}`
-          });
+          if (creditAmt.isGreaterThan(0)) {
+            journalLines.push({
+              account_code: l.ledger_account_code || (l.line_type === 'FEE' ? '4100' : '2200'),
+              debit: '0.00',
+              credit: creditAmt.toFixed(2),
+              memo: `Cr ${l.description}`
+            });
+          }
         }
       }
 
@@ -474,13 +486,14 @@ async function processPaymentReceipt({
   paymentDate = new Date(),
   targetInvoiceId = null,
   isFiduciary = true,
+  customJournalLines = null,
   useMigrationAdapter = false
 }) {
-  const isLegacy = await shouldUseLegacyAdapter({
+  const isLegacy = (customJournalLines && customJournalLines.length >= 2) || (await shouldUseLegacyAdapter({
     tenantId,
     eventCode: 'billing.payment.received',
     useMigrationAdapter
-  });
+  }));
 
   const { payment, createdAllocations, outboxEvent, legacyGlResult } = await withOptionalTransaction(async (session) => {
     const billingAccount = await BillingAccount.findOne({ _id: billingAccountId, tenant_id: tenantId }).session(session);
@@ -550,32 +563,42 @@ async function processPaymentReceipt({
 
     let lGlResult = null;
     if (isLegacy) {
-      const cashAccountCode = isFiduciary ? '1010' : '1000';
-      const journalLines = [
-        {
-          account_code: cashAccountCode,
-          debit: paymentAmountBN.toFixed(2),
-          credit: '0.00',
-          memo: `Dr Cash received via ${paymentMethod} (${paymentNumber})`
+      let journalLines = [];
+      if (customJournalLines && Array.isArray(customJournalLines) && customJournalLines.length >= 2) {
+        journalLines = customJournalLines.map((jl) => ({
+          account_code: jl.account_code,
+          debit: new BigNumber(jl.debit || 0).toFixed(2),
+          credit: new BigNumber(jl.credit || 0).toFixed(2),
+          memo: jl.memo || jl.description || `Customer Cash Receipt ${paymentNumber}`
+        }));
+      } else {
+        const cashAccountCode = isFiduciary ? '1010' : '1000';
+        journalLines = [
+          {
+            account_code: cashAccountCode,
+            debit: paymentAmountBN.toFixed(2),
+            credit: '0.00',
+            memo: `Dr Cash received via ${paymentMethod} (${paymentNumber})`
+          }
+        ];
+
+        if (totalAllocatedBN.isGreaterThan(0)) {
+          journalLines.push({
+            account_code: '1100',
+            debit: '0.00',
+            credit: totalAllocatedBN.toFixed(2),
+            memo: `Cr AR knocked off by Payment ${paymentNumber}`
+          });
         }
-      ];
 
-      if (totalAllocatedBN.isGreaterThan(0)) {
-        journalLines.push({
-          account_code: '1100',
-          debit: '0.00',
-          credit: totalAllocatedBN.toFixed(2),
-          memo: `Cr AR knocked off by Payment ${paymentNumber}`
-        });
-      }
-
-      if (unallocatedBN.isGreaterThan(0)) {
-        journalLines.push({
-          account_code: '2190',
-          debit: '0.00',
-          credit: unallocatedBN.toFixed(2),
-          memo: `Cr Unapplied Cash Suspense for excess payment ${paymentNumber}`
-        });
+        if (unallocatedBN.isGreaterThan(0)) {
+          journalLines.push({
+            account_code: '2190',
+            debit: '0.00',
+            credit: unallocatedBN.toFixed(2),
+            memo: `Cr Unapplied Cash Suspense for excess payment ${paymentNumber}`
+          });
+        }
       }
 
       lGlResult = await legacyDirectPost({
@@ -1014,6 +1037,7 @@ async function applyPolicyEndorsement({
   billingOption = 'SPREAD_INSTALLMENTS', // 'SPREAD_INSTALLMENTS' | 'STANDALONE_INVOICE'
   billingAccountId = null,
   autoIssueStandaloneInvoice = true,
+  customJournalLines = null,
   useMigrationAdapter = false
 }) {
   const cleanPolicyNumber = policyNumber.trim().toUpperCase();
@@ -1088,70 +1112,14 @@ async function applyPolicyEndorsement({
     }
   });
 
-  // 4. Post Double-Entry GL Journal Entry (Guide Scenario 2: GL Step 1)
-  // Debit 1100 Premium Receivable: $7,222.19
-  // Credit 2200 Unearned Premium Reserve: $7,222.19
-  const isLegacy = await shouldUseLegacyAdapter({
-    tenantId,
-    eventCode: 'policy.endorsement.issued',
-    useMigrationAdapter
-  });
-
+  // 4. Double-Entry GL Postings:
+  // Neither Sub-Scenario 1 (STANDALONE_INVOICE) nor Sub-Scenario 2 (SPREAD_INSTALLMENTS)
+  // posts a GL journal at endorsement time.
+  // Both sub-scenarios only create or update Installment Schedules.
+  // GL is strictly posted when the respective invoice is issued (via issueInvoice / RULE_INV_ISSUE).
   let glResult = null;
-  if (isLegacy) {
-    const journalLines = [
-      {
-        account_code: '1100',
-        debit: deltaBN.toFixed(2),
-        credit: '0.00',
-        memo: `Dr 1100 AR - Endorsement ${endorsementNumber} (${vehicleId})`
-      },
-      {
-        account_code: '2200',
-        debit: '0.00',
-        credit: deltaBN.toFixed(2),
-        memo: `Cr 2200 UPR - Endorsement ${endorsementNumber} (${vehicleId})`
-      }
-    ];
 
-    glResult = await legacyDirectPost({
-      tenantId,
-      userId,
-      postingDate: effDate,
-      sourceModule: 'POLICY_ENDORSEMENT',
-      referenceId: endorsementNumber,
-      memo: `Endorsement ${endorsementNumber} - Truck ${vehicleId} Pro-Rata Delta (${billingOption})`,
-      lines: journalLines
-    });
-  } else {
-    const eventResult = await publishAndProcessDomainEvent({
-      tenantId,
-      eventType: 'policy.endorsement.issued',
-      eventVersion: '1.0.0',
-      sourceModule: 'POLICY_ENDORSEMENT',
-      sourceEntityType: 'Policy',
-      sourceEntityId: cleanPolicyNumber,
-      sourceTransactionId: endorsementNumber,
-      correlationId: `CORR-END-${endorsementNumber}`,
-      occurredAt: effDate,
-      payload: {
-        policy_id: cleanPolicyNumber,
-        endorsement_number: endorsementNumber,
-        vehicle_id: vehicleId,
-        delta_premium: deltaBN.toNumber(),
-        active_days: Number(activeDays),
-        billing_option: billingOption
-      },
-      userId,
-      dispatchImmediately: true
-    });
-    glResult = eventResult;
-  }
-
-  // 5. Update Billing Account current_balance (+ delta)
-  const curAccBal = new BigNumber(billingAccount.current_balance ? billingAccount.current_balance.toString() : '0');
-  billingAccount.current_balance = mongoose.Types.Decimal128.fromString(curAccBal.plus(deltaBN).toFixed(2));
-  await billingAccount.save();
+  // 5. Billing Account balance is untouched at endorsement time (increases only when an invoice is issued)
 
   // 6. Execute Sub-Scenario Billing Logic
   let updatedSchedules = [];
@@ -1159,12 +1127,21 @@ async function applyPolicyEndorsement({
   let standaloneSchedule = null;
 
   if (billingOption === 'SPREAD_INSTALLMENTS') {
-    // Sub-Scenario 2: Spread delta across remaining unbilled installments
-    const unbilledSchedules = await InstallmentSchedule.find({
+    // Sub-Scenario 2: Spread delta across remaining unbilled future installments (installments > 1)
+    let unbilledSchedules = await InstallmentSchedule.find({
       tenant_id: tenantId,
       $or: [{ policy_number: cleanPolicyNumber }, { policy_id: cleanPolicyNumber }],
-      status: 'SCHEDULED'
+      status: 'SCHEDULED',
+      installment_number: { $gt: 1 }
     }).sort({ installment_number: 1 });
+
+    if (unbilledSchedules.length === 0) {
+      unbilledSchedules = await InstallmentSchedule.find({
+        tenant_id: tenantId,
+        $or: [{ policy_number: cleanPolicyNumber }, { policy_id: cleanPolicyNumber }],
+        status: 'SCHEDULED'
+      }).sort({ installment_number: 1 });
+    }
 
     if (unbilledSchedules.length === 0) {
       throw new Error(`No scheduled installments found for policy ${cleanPolicyNumber} to spread delta across.`);
@@ -1232,59 +1209,13 @@ async function applyPolicyEndorsement({
       total_amount: mongoose.Types.Decimal128.fromString(deltaBN.toFixed(2)),
       amount: mongoose.Types.Decimal128.fromString(deltaBN.toFixed(2)),
       balance_amount: mongoose.Types.Decimal128.fromString(deltaBN.toFixed(2)),
-      status: autoIssueStandaloneInvoice ? 'BILLED' : 'SCHEDULED',
+      status: 'SCHEDULED',
       dimensions: {
         endorsement_number: endorsementNumber,
         vehicle_id: vehicleId,
         standalone_endorsement: true
       }
     });
-
-    if (autoIssueStandaloneInvoice) {
-      standaloneInvoice = await Invoice.create({
-        tenant_id: tenantId,
-        billing_account_id: billingAccount._id,
-        policy_id: cleanPolicyNumber,
-        invoice_number: invoiceNumber,
-        invoice_date: effDate,
-        due_date: dueDate,
-        installment_number: nextInstNo,
-        total_amount: mongoose.Types.Decimal128.fromString(deltaBN.toFixed(2)),
-        amount_paid: mongoose.Types.Decimal128.fromString('0.00'),
-        balance_due: mongoose.Types.Decimal128.fromString(deltaBN.toFixed(2)),
-        status: 'ISSUED',
-        journal_id: glResult?.journal?._id || glResult?._id || null,
-        memo: `Endorsement ${endorsementNumber} - Truck ${vehicleId} Pro-Rata Delta Premium`,
-        carrier_id: billingAccount.carrier_id || null,
-        carrier_name: billingAccount.carrier_name || 'Summit Mutual Insurance Company',
-        broker_id: billingAccount.broker_id || null,
-        broker_name: billingAccount.broker_name || 'Brightline Insurance Brokerage LLC',
-        dimensions: {
-          carrier_name: billingAccount.carrier_name || 'Summit Mutual Insurance Company',
-          broker_name: billingAccount.broker_name || 'Brightline Insurance Brokerage LLC',
-          endorsement_number: endorsementNumber,
-          vehicle_id: vehicleId,
-          standalone_endorsement: true
-        }
-      });
-
-      await InvoiceLine.create({
-        tenant_id: tenantId,
-        invoice_id: standaloneInvoice._id,
-        installment_id: standaloneSchedule._id,
-        billing_transaction_snapshot_id: txSnap._id,
-        line_number: 1,
-        line_type: 'PREMIUM',
-        description: `Endorsement ${endorsementNumber} - Truck ${vehicleId} Pro-Rata Premium (303 Days)`,
-        amount: mongoose.Types.Decimal128.fromString(deltaBN.toFixed(2)),
-        tax_amount: mongoose.Types.Decimal128.fromString('0.00'),
-        currency_code: 'USD',
-        ledger_account_code: '2200'
-      });
-
-      standaloneSchedule.invoice_id = standaloneInvoice._id;
-      await standaloneSchedule.save();
-    }
   }
 
   return {
@@ -1376,11 +1307,21 @@ async function resetPolicyEndorsement({
   );
 
   // 6. Delete Endorsement Journal Entries & Rollback Ledger Account balances
+  const delta1100 = await JournalEntry.find({ tenant_id: tenantId, account_code: '1100' });
+  for (const de of delta1100) {
+    const val = parseFloat(de.debit ? de.debit.toString() : '0');
+    if (Math.abs(val - 7222.19) < 0.1) {
+      await JournalEntry.deleteMany({ journal_id: de.journal_id });
+      await Journal.deleteOne({ _id: de.journal_id });
+    }
+  }
+
   const endJournals = await Journal.find({
     tenant_id: tenantId,
     $or: [
       { source_module: 'POLICY_ENDORSEMENT' },
-      { reference_id: { $regex: '^END-' } }
+      { reference_id: { $regex: '^END-' } },
+      { memo: { $regex: /endorsement/i } }
     ]
   });
 

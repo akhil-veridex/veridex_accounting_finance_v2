@@ -25,7 +25,9 @@ import {
   Edit2,
   Trash2,
   Power,
-  Sparkles
+  Sparkles,
+  RotateCcw,
+  BookOpen
 } from 'lucide-react';
 import ModalClose from '../components/ModalClose';
 
@@ -120,19 +122,159 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
   });
   const [paymentForm, setPaymentForm] = useState({
     billing_account_id: '',
-    amount: '9562.50',
+    amount: '',
     payment_method: 'ACH',
     reference_number: 'WF-TX-ACH-9912',
     is_fiduciary: true,
     target_invoice_id: ''
   });
 
+  const [glAccounts, setGlAccounts] = useState([]);
+  const [invoiceJournalLines, setInvoiceJournalLines] = useState([
+    { account_code: '1100', debit: '9562.50', credit: '0.00', memo: 'Dr 1100 AR for Invoice' },
+    { account_code: '2200', debit: '0.00', credit: '9412.50', memo: 'Cr 2200 UPR for Installment #1' },
+    { account_code: '4100', debit: '0.00', credit: '150.00', memo: 'Cr 4100 Policy Fee Income' }
+  ]);
+
+  const [paymentJournalLines, setPaymentJournalLines] = useState([
+    { account_code: '1010', debit: '9562.50', credit: '0.00', memo: 'Dr 1010 Texas Premium Trust' },
+    { account_code: '1100', debit: '0.00', credit: '9562.50', memo: 'Cr 1100 AR (Waterfall Cleared)' }
+  ]);
+
+  const handlePaymentJournalLineChange = (index, field, value) => {
+    setPaymentJournalLines((prev) => {
+      const next = [...prev];
+      const cur = { ...next[index] };
+      if (field === 'account_code') {
+        cur.account_code = value;
+      } else if (field === 'type') {
+        const amt = parseFloat(cur.debit) > 0 ? cur.debit : (cur.credit || '0.00');
+        if (value === 'DEBIT') {
+          cur.debit = amt;
+          cur.credit = '0.00';
+        } else {
+          cur.credit = amt;
+          cur.debit = '0.00';
+        }
+      } else if (field === 'amount') {
+        if (parseFloat(cur.debit) > 0 || (parseFloat(cur.credit) === 0 && !cur.credit)) {
+          cur.debit = value;
+          cur.credit = '0.00';
+        } else {
+          cur.credit = value;
+          cur.debit = '0.00';
+        }
+      } else if (field === 'memo') {
+        cur.memo = value;
+      }
+      next[index] = cur;
+      return next;
+    });
+  };
+
+  const addPaymentJournalLine = () => {
+    setPaymentJournalLines((prev) => [
+      ...prev,
+      { account_code: '2190', debit: '0.00', credit: '0.00', memo: 'Cr Unapplied Cash Suspense' }
+    ]);
+  };
+
+  const removePaymentJournalLine = (index) => {
+    if (paymentJournalLines.length <= 2) return;
+    setPaymentJournalLines((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handlePaymentAmountChange = (newAmt) => {
+    setPaymentForm((prev) => ({ ...prev, amount: newAmt }));
+    const val = parseFloat(newAmt) || 0;
+    setPaymentJournalLines((prev) => {
+      if (!prev || prev.length < 2) return prev;
+      return [
+        {
+          ...prev[0],
+          debit: val > 0 ? newAmt : '0.00'
+        },
+        {
+          ...prev[1],
+          credit: val > 0 ? newAmt : '0.00'
+        },
+        ...prev.slice(2)
+      ];
+    });
+  };
+
+  const defaultCOA = [
+    { account_code: '1000', account_name: 'Operating Cash', account_type: 'ASSET' },
+    { account_code: '1010', account_name: 'Premium Trust Bank (Texas § 4053)', account_type: 'ASSET' },
+    { account_code: '1020', account_name: 'Cash - Claims Escrow Account', account_type: 'ASSET' },
+    { account_code: '1100', account_name: 'Premium Receivable', account_type: 'ASSET' },
+    { account_code: '2010', account_name: 'Due to Carrier', account_type: 'LIABILITY' },
+    { account_code: '2020', account_name: 'Broker Commission Payable', account_type: 'LIABILITY' },
+    { account_code: '2190', account_name: 'Unapplied Cash Suspense', account_type: 'LIABILITY' },
+    { account_code: '2200', account_name: 'Unearned Premium Reserve (UPR - ASC 944)', account_type: 'LIABILITY' },
+    { account_code: '4000', account_name: 'Earned Premium Revenue', account_type: 'REVENUE' },
+    { account_code: '4100', account_name: 'Policy Fee Income', account_type: 'REVENUE' },
+    { account_code: '4200', account_name: 'MGA Commission Income', account_type: 'REVENUE' },
+    { account_code: '5000', account_name: 'General & Administrative Expense', account_type: 'EXPENSE' },
+    { account_code: '5010', account_name: 'Commission Expense - Retail Agent', account_type: 'EXPENSE' }
+  ];
+
+  const handleJournalLineChange = (index, field, value) => {
+    setInvoiceJournalLines((prev) => {
+      const next = [...prev];
+      const cur = { ...next[index] };
+      if (field === 'account_code') {
+        cur.account_code = value;
+      } else if (field === 'type') {
+        const amt = parseFloat(cur.debit) > 0 ? cur.debit : (cur.credit || '0.00');
+        if (value === 'DEBIT') {
+          cur.debit = amt;
+          cur.credit = '0.00';
+        } else {
+          cur.credit = amt;
+          cur.debit = '0.00';
+        }
+      } else if (field === 'amount') {
+        if (parseFloat(cur.debit) > 0 || (parseFloat(cur.credit) === 0 && !cur.credit)) {
+          cur.debit = value;
+          cur.credit = '0.00';
+        } else {
+          cur.credit = value;
+          cur.debit = '0.00';
+        }
+      } else if (field === 'memo') {
+        cur.memo = value;
+      }
+      next[index] = cur;
+      return next;
+    });
+  };
+
+  const addJournalLine = () => {
+    setInvoiceJournalLines((prev) => [
+      ...prev,
+      { account_code: '2200', debit: '0.00', credit: '0.00', memo: 'Cr Additional Line' }
+    ]);
+  };
+
+  const removeJournalLine = (index) => {
+    if (invoiceJournalLines.length <= 2) return;
+    setInvoiceJournalLines((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const parseDecimalValue = (val) => {
+    if (val === null || val === undefined) return 0;
+    if (typeof val === 'object' && val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
+    const n = parseFloat(val);
+    return isNaN(n) ? 0 : n;
+  };
+
   const openInvoicesForAccount = invoices.filter(
     (i) =>
-      (i.billing_account_id?._id === paymentForm.billing_account_id ||
-        i.billing_account_id === paymentForm.billing_account_id) &&
+      (!paymentForm.billing_account_id ||
+        String(i.billing_account_id?._id || i.billing_account_id) === String(paymentForm.billing_account_id)) &&
       ['ISSUED', 'PARTIALLY_PAID'].includes(i.status) &&
-      Number(i.balance_due) > 0
+      parseDecimalValue(i.balance_due) > 0
   );
   const [adjustmentForm, setAdjustmentForm] = useState({
     billing_account_id: '',
@@ -182,14 +324,83 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
       (accounts[0] ? accounts[0]._id : '');
     const prem = sched.premium_amount?.$numberDecimal || sched.premium_amount || '9412.50';
     const fee = sched.fee_amount?.$numberDecimal || sched.fee_amount || (sched.installment_number === 1 ? '150.00' : '0.00');
+    const premNum = parseFloat(prem) || 0;
+    const feeNum = parseFloat(fee) || 0;
+    const totalDue = (premNum + feeNum).toFixed(2);
+    const instNum = sched.installment_number || 1;
+
     setInvoiceForm({
       billing_account_id: accId,
       policy_id: sched.policy_id || 'POL-TX-8821',
-      installment_number: sched.installment_number || 1,
+      installment_number: instNum,
       invoice_date: sched.due_date ? new Date(sched.due_date).toISOString().split('T')[0] : '2026-07-01',
       premium_amount: String(prem),
       fee_amount: String(fee)
     });
+
+    // Full installment due amount (including any spread endorsement pro-rata share, e.g. $11,819.90)
+    const glDebitAmt = totalDue;
+    const glPremCredit = premNum.toFixed(2);
+
+    const initialLines = [
+      {
+        account_code: '1100',
+        debit: glDebitAmt,
+        credit: '0.00',
+        memo: `Dr 1100 AR - Installment #${instNum} (${sched.policy_id || 'POL-TX-8821'})`
+      },
+      {
+        account_code: '2200',
+        debit: '0.00',
+        credit: glPremCredit,
+        memo: `Cr 2200 UPR - Commercial Auto Premium Inst #${instNum}`
+      }
+    ];
+
+    if (feeNum > 0) {
+      initialLines.push({
+        account_code: '4100',
+        debit: '0.00',
+        credit: feeNum.toFixed(2),
+        memo: 'Cr 4100 Policy Fee Income'
+      });
+    }
+
+    setInvoiceJournalLines(initialLines);
+    setShowIssueInvoiceModal(true);
+  };
+
+  const openNewInvoiceModal = () => {
+    const prem = invoiceForm.premium_amount || '9412.50';
+    const fee = invoiceForm.fee_amount || '150.00';
+    const premNum = parseFloat(prem) || 0;
+    const feeNum = parseFloat(fee) || 0;
+    const totalDue = (premNum + feeNum).toFixed(2);
+    const instNum = invoiceForm.installment_number || 1;
+
+    const initialLines = [
+      {
+        account_code: '1100',
+        debit: totalDue,
+        credit: '0.00',
+        memo: `Dr 1100 AR - Customer Invoice (${invoiceForm.policy_id || 'POL-TX-8821'})`
+      },
+      {
+        account_code: '2200',
+        debit: '0.00',
+        credit: premNum.toFixed(2),
+        memo: `Cr 2200 UPR - Premium Installment #${instNum}`
+      }
+    ];
+    if (feeNum > 0) {
+      initialLines.push({
+        account_code: '4100',
+        debit: '0.00',
+        credit: feeNum.toFixed(2),
+        memo: 'Cr 4100 Policy Fee Income'
+      });
+    }
+    setInvoiceJournalLines(initialLines);
     setShowIssueInvoiceModal(true);
   };
 
@@ -207,19 +418,26 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
     setLoading(true);
     setError(null);
     try {
-      const rulesRes = await rulesApi.getRules('?status=PUBLISHED').catch(() => ({ data: [] }));
+      const [rulesRes, coaRes] = await Promise.all([
+        rulesApi.getRules('?status=PUBLISHED').catch(() => ({ data: [] })),
+        authApi.getAccounts().catch(() => ({ data: [] }))
+      ]);
       const activeRules = rulesRes.data || [];
       setPublishedRules(activeRules);
+      if (coaRes.data && Array.isArray(coaRes.data) && coaRes.data.length > 0) {
+        setGlAccounts(coaRes.data);
+      }
 
       if (subtab === 'overview') {
-        const [res, accRes, cpRes, schRes, snapRes, finRes, plansRes] = await Promise.all([
+        const [res, accRes, cpRes, schRes, snapRes, finRes, plansRes, invRes] = await Promise.all([
           authApi.getBillingOverview(),
           authApi.getBillingAccounts(),
           counterpartiesApi.getParties().catch(() => ({ data: [] })),
           authApi.getInstallmentSchedules().catch(() => ({ data: [] })),
           authApi.getPolicySnapshots().catch(() => ({ data: [] })),
           authApi.getFinanceAgreements().catch(() => ({ data: [] })),
-          authApi.getBillingPlans().catch(() => ({ data: [] }))
+          authApi.getBillingPlans().catch(() => ({ data: [] })),
+          authApi.getInvoices().catch(() => ({ data: [] }))
         ]);
         setOverview(res.data);
         setAccounts(accRes.data || []);
@@ -228,15 +446,18 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
         setSnapshots(snapRes.data || []);
         setFinanceAgreements(finRes.data || []);
         setPlans(plansRes.data || []);
+        setInvoices(invRes.data || []);
       } else if (subtab === 'schedules') {
-        const [schRes, accRes, snapRes] = await Promise.all([
+        const [schRes, accRes, snapRes, invRes] = await Promise.all([
           authApi.getInstallmentSchedules().catch(() => ({ data: [] })),
           authApi.getBillingAccounts().catch(() => ({ data: [] })),
-          authApi.getPolicySnapshots().catch(() => ({ data: [] }))
+          authApi.getPolicySnapshots().catch(() => ({ data: [] })),
+          authApi.getInvoices().catch(() => ({ data: [] }))
         ]);
         setSchedules(schRes.data || []);
         setAccounts(accRes.data || []);
         setSnapshots(snapRes.data || []);
+        setInvoices(invRes.data || []);
       } else if (subtab === 'snapshots') {
         const [snapRes, txRes, finRes, accRes, cpRes] = await Promise.all([
           authApi.getPolicySnapshots().catch(() => ({ data: [] })),
@@ -274,12 +495,14 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
         setCounterparties(cpRes.data || []);
         setSchedules(schRes.data || []);
       } else if (subtab === 'payments') {
-        const [res, accRes] = await Promise.all([
+        const [res, accRes, invRes] = await Promise.all([
           authApi.getPayments(),
-          authApi.getBillingAccounts()
+          authApi.getBillingAccounts(),
+          authApi.getInvoices().catch(() => ({ data: [] }))
         ]);
         setPayments(res.data);
         setAccounts(accRes.data || []);
+        setInvoices(invRes.data || []);
       } else if (subtab === 'adjustments') {
         const res = await authApi.getAdjustments();
         setAdjustments(res.data);
@@ -438,10 +661,10 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
         ...endorsementForm,
         billing_account_id: endorsementForm.billing_account_id || (accounts[0] ? accounts[0]._id : undefined)
       });
-      const optDesc = endorsementForm.billing_option === 'SPREAD_INSTALLMENTS'
-        ? 'Sub-Scenario 2 (Option B: Spread +$2,407.40 across remaining installments -> $11,819.90 each)'
-        : 'Sub-Scenario 1 (Option A: Separate Single Invoice for $7,222.19)';
-      setSuccess(`Scenario 2 Endorsement applied successfully via ${optDesc}! GL Journal posted: Dr 1100 AR $7,222.19 / Cr 2200 UPR $7,222.19.`);
+      const successMsg = endorsementForm.billing_option === 'SPREAD_INSTALLMENTS'
+        ? `Scenario 2 Endorsement applied! Installments #2, #3, #4 updated to $11,819.90 each (+ $2,407.40 delta). Zero GL posted at endorsement; GL will post cleanly upon each installment invoice.`
+        : `Scenario 2 Endorsement applied! Standalone Installment #5 scheduled for $7,222.19. Zero GL posted at endorsement; GL will post cleanly when you issue the invoice.`;
+      setSuccess(successMsg);
       setShowEndorsementModal(false);
       setSubtab('schedules');
       await loadData();
@@ -467,52 +690,170 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
     }
   };
 
-  // Handle Issue Invoice
+  
+  const handleRepairGL = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await authApi.repairGL();
+      setSuccess(res.message || 'GL audit & repair completed successfully!');
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle Issue Invoice with Editable JE Lines Verification
   const handleIssueInvoice = async (e) => {
     e.preventDefault();
     try {
-      const lines = [
-        {
-          line_type: 'PREMIUM',
-          description: `Commercial Auto Premium Installment #${invoiceForm.installment_number}`,
-          amount: invoiceForm.premium_amount,
-          ledger_account_code: '2200'
-        }
-      ];
-      if (Number(invoiceForm.fee_amount) > 0) {
-        lines.push({
-          line_type: 'FEE',
-          description: 'Policy Issuance Fee',
-          amount: invoiceForm.fee_amount,
-          ledger_account_code: '4100'
-        });
+      setLoading(true);
+      setError(null);
+
+      // Verify journal lines balance
+      const totalDebits = invoiceJournalLines.reduce((sum, l) => sum + (parseFloat(l.debit) || 0), 0);
+      const totalCredits = invoiceJournalLines.reduce((sum, l) => sum + (parseFloat(l.credit) || 0), 0);
+      if (Math.abs(totalDebits - totalCredits) > 0.01) {
+        throw new Error(`General Ledger Journal Entry is out of balance! Debits (${totalDebits.toFixed(2)}) must equal Credits (${totalCredits.toFixed(2)}). Difference: ${Math.abs(totalDebits - totalCredits).toFixed(2)}`);
       }
 
-      await authApi.issueInvoice({
+      // Map credit lines to invoice itemization lines
+      const creditLines = invoiceJournalLines.filter(l => (parseFloat(l.credit) || 0) > 0);
+      const lines = creditLines.map(l => {
+        const isFee = l.account_code === '4100';
+        return {
+          line_type: isFee ? 'FEE' : 'PREMIUM',
+          description: l.memo || (isFee ? 'Policy Issuance Fee' : `Commercial Auto Premium Installment #${invoiceForm.installment_number}`),
+          amount: parseFloat(l.credit).toFixed(2),
+          ledger_account_code: l.account_code
+        };
+      });
+
+      const arLine = invoiceJournalLines.find(l => (parseFloat(l.debit) || 0) > 0);
+      const arAccountCode = arLine ? arLine.account_code : '1100';
+
+      const res = await authApi.issueInvoice({
         billing_account_id: invoiceForm.billing_account_id,
         policy_id: invoiceForm.policy_id,
         installment_number: invoiceForm.installment_number,
         invoice_date: invoiceForm.invoice_date,
-        lines
+        lines,
+        ar_account_code: arAccountCode,
+        custom_journal_lines: invoiceJournalLines
       });
-      setSuccess('Invoice issued & GL posted (Dr 1100 AR / Cr 2200 UPR & 4100 Fee)');
+
+      setSuccess(res.message || 'Invoice issued & balanced double-entry GL journal posted!');
       setShowIssueInvoiceModal(false);
-      loadData();
+      await loadData();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Handle Record Payment
+  // Open Payment Modal with guaranteed fresh real-time invoices
+  const openRecordPaymentModal = async (targetInv = null) => {
+    try {
+      setLoading(true);
+      setError(null);
+      // Fetch latest invoices and accounts in real-time
+      const [invRes, accRes] = await Promise.all([
+        authApi.getInvoices().catch(() => ({ data: [] })),
+        authApi.getBillingAccounts().catch(() => ({ data: [] }))
+      ]);
+      const freshInvoices = invRes.data || [];
+      const freshAccounts = accRes.data || [];
+      setInvoices(freshInvoices);
+      if (freshAccounts.length > 0) setAccounts(freshAccounts);
+
+      const targetAccId = targetInv?.billing_account_id?._id || 
+                          targetInv?.billing_account_id || 
+                          paymentForm.billing_account_id || 
+                          (freshAccounts[0]?._id || (accounts[0]?._id || ''));
+
+      const openInvs = freshInvoices.filter(
+        (i) =>
+          (!targetAccId ||
+            String(i.billing_account_id?._id || i.billing_account_id) === String(targetAccId)) &&
+          ['ISSUED', 'PARTIALLY_PAID'].includes(i.status) &&
+          parseDecimalValue(i.balance_due) > 0
+      );
+
+      // Always auto-select targetInv or the first open invoice if available
+      const autoTarget = targetInv || (openInvs.length > 0 ? openInvs[0] : null);
+
+      if (autoTarget) {
+        const balDue = parseDecimalValue(autoTarget.balance_due).toFixed(2);
+        const invNum = autoTarget.invoice_number || 'Target Invoice';
+        setPaymentForm({
+          billing_account_id: autoTarget.billing_account_id?._id || autoTarget.billing_account_id || targetAccId,
+          target_invoice_id: autoTarget._id,
+          amount: balDue,
+          payment_method: paymentForm.payment_method || 'ACH',
+          reference_number: `WF-TX-ACH-${Date.now().toString().slice(-4)}`,
+          is_fiduciary: true
+        });
+        setPaymentJournalLines([
+          {
+            account_code: '1010',
+            debit: balDue,
+            credit: '0.00',
+            memo: `Dr 1010 Texas Premium Trust - Payment for ${invNum}`
+          },
+          {
+            account_code: '1100',
+            debit: '0.00',
+            credit: balDue,
+            memo: `Cr 1100 AR Knock-off (${invNum})`
+          }
+        ]);
+      } else {
+        setPaymentForm(prev => ({
+          ...prev,
+          billing_account_id: targetAccId,
+          target_invoice_id: '',
+          amount: ''
+        }));
+      }
+
+      setShowRecordPaymentModal(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openPaymentForInvoice = (inv) => openRecordPaymentModal(inv);
+
+  // Handle Record Payment with Balanced JE Lines Verification
   const handleRecordPayment = async (e) => {
     e.preventDefault();
     try {
-      await authApi.postPaymentReceipt(paymentForm);
-      setSuccess('Payment captured, waterfall allocated, and GL journal posted (Dr 1010 / Cr 1100)');
+      setLoading(true);
+      setError(null);
+
+      // Verify journal lines balance
+      const totalDebits = paymentJournalLines.reduce((sum, l) => sum + (parseFloat(l.debit) || 0), 0);
+      const totalCredits = paymentJournalLines.reduce((sum, l) => sum + (parseFloat(l.credit) || 0), 0);
+      if (Math.abs(totalDebits - totalCredits) > 0.01) {
+        throw new Error(`General Ledger Journal Entry is out of balance! Debits (${totalDebits.toFixed(2)}) must equal Credits (${totalCredits.toFixed(2)}). Difference: ${Math.abs(totalDebits - totalCredits).toFixed(2)}`);
+      }
+
+      await authApi.postPaymentReceipt({
+        ...paymentForm,
+        custom_journal_lines: paymentJournalLines
+      });
+      setSuccess('Payment captured, waterfall allocated, and balanced GL journal posted (Dr 1010 / Cr 1100)!');
       setShowRecordPaymentModal(false);
-      loadData();
+      await loadData();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -538,6 +879,22 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
       setError(err.message);
     }
   };
+
+
+  // Auto-select open invoice and prefill exact balance due
+  useEffect(() => {
+    if (showRecordPaymentModal && openInvoicesForAccount.length > 0) {
+      const curInv = openInvoicesForAccount.find((i) => i._id === paymentForm.target_invoice_id);
+      if (!curInv) {
+        const firstInv = openInvoicesForAccount[0];
+        setPaymentForm(prev => ({
+          ...prev,
+          target_invoice_id: firstInv._id,
+          amount: parseDecimalValue(firstInv.balance_due).toFixed(2)
+        }));
+      }
+    }
+  }, [showRecordPaymentModal, openInvoicesForAccount, paymentForm.target_invoice_id]);
 
   return (
     <div className="space-y-6">
@@ -702,14 +1059,14 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
                   <span>1. Bind Policy & Generate 4-Pay Schedule</span>
                 </button>
                 <button
-                  onClick={() => setShowIssueInvoiceModal(true)}
+                  onClick={() => openNewInvoiceModal()}
                   className="w-full px-3.5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 border border-transparent shadow-sm transition"
                 >
                   <FileText className="w-3.5 h-3.5" />
                   <span>2. Issue Deposit Invoice</span>
                 </button>
                 <button
-                  onClick={() => setShowRecordPaymentModal(true)}
+                  onClick={() => openRecordPaymentModal()}
                   className="w-full px-3.5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 border border-transparent shadow-sm transition"
                 >
                   <DollarSign className="w-3.5 h-3.5" />
@@ -757,7 +1114,17 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
                 <Plus className="w-3.5 h-3.5" />
                 <span>Bind Policy & Schedule</span>
               </button>
-              <button
+                            <button
+                type="button"
+                onClick={handleRepairGL}
+                disabled={loading}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 rounded text-xs font-semibold transition cursor-pointer"
+                title="Audit and automatically post missing double-entry GL journals for invoices and reconcile COA"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-brand-400" />
+                <span>Reconcile Invoice GL</span>
+              </button>
+<button
                 onClick={() => setShowEndorsementModal(true)}
                 className="flex items-center space-x-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded text-xs font-semibold shadow transition"
               >
@@ -994,6 +1361,16 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
             </div>
             <div className="flex items-center space-x-2">
               <button
+                type="button"
+                onClick={handleRepairGL}
+                disabled={loading}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 rounded text-xs font-semibold transition cursor-pointer"
+                title="Audit and automatically post missing double-entry GL journals for invoices and reconcile COA"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-brand-400" />
+                <span>Reconcile Invoice GL</span>
+              </button>
+              <button
                 onClick={() => setShowEndorsementModal(true)}
                 className="flex items-center space-x-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded text-xs font-semibold shadow transition"
               >
@@ -1001,7 +1378,7 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
                 <span>+ Apply Policy Endorsement (Scenario 2)</span>
               </button>
               <button
-                onClick={() => setShowIssueInvoiceModal(true)}
+                onClick={() => openNewInvoiceModal()}
                 className="flex items-center space-x-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded text-xs font-semibold transition"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1069,13 +1446,25 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
                         {inv.journal_id ? inv.journal_id.journal_number : '-'}
                       </td>
                       <td className="p-3 text-right">
-                        <button
-                          onClick={() => viewInvoiceDetail(inv._id)}
-                          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[11px] font-sans inline-flex items-center space-x-1"
-                        >
-                          <Eye className="w-3 h-3" />
-                          <span>Lines</span>
-                        </button>
+                        <div className="flex items-center justify-end space-x-1.5">
+                          <button
+                            onClick={() => viewInvoiceDetail(inv._id)}
+                            className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[11px] font-sans inline-flex items-center space-x-1"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>Lines</span>
+                          </button>
+                          {inv.status !== 'PAID' && parseDecimalValue(inv.balance_due) > 0 && (
+                            <button
+                              onClick={() => openRecordPaymentModal(inv)}
+                              className="px-2.5 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded text-[11px] font-sans inline-flex items-center space-x-1 font-semibold shadow-sm transition"
+                              title={`Record cash receipt for ${inv.invoice_number}`}
+                            >
+                              <DollarSign className="w-3 h-3" />
+                              <span>Pay (${parseDecimalValue(inv.balance_due).toFixed(2)})</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -1435,7 +1824,7 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
               Customer payments captured and allocated against open receivable balances.
             </div>
             <button
-              onClick={() => setShowRecordPaymentModal(true)}
+              onClick={() => openRecordPaymentModal()}
               className="flex items-center space-x-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded text-xs font-semibold transition"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -2303,7 +2692,7 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
                   <div className="text-[10px] text-slate-400 uppercase font-mono">T5 Annual Full Rate</div>
                   <div className="text-sm font-bold font-mono text-slate-200">${endorsementForm.annual_rate}</div>
                 </div>
-                <div className="text-slate-500 font-mono text-sm">&times; (303 / 365) &equals;</div>
+                <div className="text-slate-500 font-mono text-sm">&times; (303 / 365) =</div>
                 <div className="text-right">
                   <div className="text-[10px] text-purple-400 uppercase font-mono">Endorsement Delta Premium</div>
                   <div className="text-base font-bold font-mono text-purple-300">${endorsementForm.delta_premium}</div>
@@ -2358,7 +2747,7 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-bold text-xs flex items-center space-x-1.5 text-blue-400">
                         <span>🅰️ Sub-Scenario 1</span>
-                        <span className="px-1.5 py-0.2 text-[9px] bg-blue-500/20 text-blue-300 rounded">Immediate Bill</span>
+                        <span className="px-1.5 py-0.2 text-[9px] bg-blue-500/20 text-blue-300 rounded">Standalone Schedule</span>
                       </span>
                       <input
                         type="radio"
@@ -2368,21 +2757,50 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
                         className="text-blue-500"
                       />
                     </div>
-                    <div className="font-semibold text-[11px] mb-1">Standalone Single Invoice</div>
+                    <div className="font-semibold text-[11px] mb-1">Standalone Single Schedule</div>
                     <div className="text-[10px] text-slate-400 space-y-0.5">
-                      <div>&bull; Issues separate invoice for <strong className="text-blue-300">$7,222.19</strong></div>
+                      <div>&bull; Creates separate schedule for <strong className="text-blue-300">$7,222.19</strong></div>
                       <div>&bull; Installments #2, #3, #4 stay at <strong>$9,412.50</strong></div>
-                      <div>&bull; Immediate full payment model</div>
+                      <div>&bull; GL posts upon invoice issuance</div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* GL Journal Preview Box */}
-              <div className="bg-slate-950 border border-slate-800 p-2.5 rounded text-[11px] font-mono space-y-1">
-                <div className="text-slate-400 text-[10px] uppercase font-sans font-semibold">Double-Entry GL Impact (Guide Scenario 2):</div>
-                <div className="text-emerald-400">Debit 1100 Premium Receivable: ${endorsementForm.delta_premium}</div>
-                <div className="text-purple-400">Credit 2200 Unearned Premium Reserve (UPR): ${endorsementForm.delta_premium}</div>
+              {/* Double-Entry GL Journal Impact & Posting Rule */}
+              <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-lg space-y-2 text-xs font-mono">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5 font-sans">
+                    <BookOpen className="w-3.5 h-3.5 text-brand-400" />
+                    <span className="font-semibold text-slate-200">Double-Entry GL Impact &amp; Recognition Mode</span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-mono">
+                    RULE_INV_ISSUE (Upon Invoice Only)
+                  </span>
+                </div>
+                {endorsementForm.billing_option === 'SPREAD_INSTALLMENTS' ? (
+                  <div className="p-2.5 bg-brand-500/10 border border-brand-500/20 rounded text-[11px] font-sans space-y-1">
+                    <div className="text-slate-200 font-semibold flex items-center space-x-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-brand-400" />
+                      <span>Sub-Scenario 2: Multi-Pay Installment Spread Model</span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed text-[11px]">
+                      The delta of <strong>${endorsementForm.delta_premium}</strong> is distributed across remaining installments (+$2,407.40 to Inst #2, #3, and +$2,407.39 to Inst #4 &rarr; <strong>$11,819.90 each</strong>).
+                      <strong> Zero GL entries are posted during endorsement.</strong> Double-entry GL journals (<span className="text-emerald-400 font-mono">Dr 1100 AR</span> / <span className="text-purple-400 font-mono">Cr 2200 UPR</span>) are posted directly when each customer installment invoice is issued, guaranteeing <strong>100% zero unbilled receivable bloating</strong>.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded text-[11px] font-sans space-y-1">
+                    <div className="text-slate-200 font-semibold flex items-center space-x-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Sub-Scenario 1: Standalone Installment Schedule Model</span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed text-[11px]">
+                      A separate standalone Installment Schedule (Inst #5) is scheduled for <strong>${endorsementForm.delta_premium}</strong>.
+                      <strong> Zero GL entries are posted during endorsement.</strong> When you click &ldquo;Issue Invoice&rdquo; for this schedule, the invoice GL journal (<span className="text-emerald-400 font-mono">Dr 1100 AR ${endorsementForm.delta_premium}</span> / <span className="text-purple-400 font-mono">Cr 2200 UPR ${endorsementForm.delta_premium}</span>) will be posted cleanly.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end space-x-2 pt-2 border-t border-slate-800">
@@ -2408,44 +2826,47 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
         </div>
       )}
 
-      {/* MODAL: Issue Invoice */}
+      {/* MODAL: Issue Customer Invoice & Edit GL Journal Lines */}
       {showIssueInvoiceModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl">
-            <h3 className="text-base font-bold text-white">Issue Customer Invoice</h3>
-            <form onSubmit={handleIssueInvoice} className="space-y-3 text-xs">
-              <div>
-                <label className="text-slate-400 block mb-1">Billing Account</label>
-                <select
-                  required
-                  value={invoiceForm.billing_account_id}
-                  onChange={(e) => setInvoiceForm({ ...invoiceForm, billing_account_id: e.target.value })}
-                  className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white"
-                >
-                  <option value="">Select Account...</option>
-                  {accounts.map((a) => (
-                    <option key={a._id} value={a._id}>{a.customer_name} ({a.account_number})</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-slate-400 block mb-1">Policy ID / Insured Risk Reference</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. POL-TX-8821 (Insured: Summit / Pine Cone)"
-                  value={invoiceForm.policy_id}
-                  onChange={(e) => setInvoiceForm({ ...invoiceForm, policy_id: e.target.value })}
-                  className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white font-mono"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-3xl w-full space-y-4 shadow-2xl my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400">
+                  <Receipt className="w-4 h-4" />
+                </div>
                 <div>
-                  <label className="text-slate-400 block mb-1">Installment #</label>
+                  <h3 className="text-base font-bold text-white">Issue Customer Invoice & General Ledger Impact</h3>
+                  <p className="text-[11px] text-slate-400">Review invoice parameters and verify or edit the double-entry GL journal lines before posting</p>
+                </div>
+              </div>
+              <ModalClose onClick={() => setShowIssueInvoiceModal(false)} />
+            </div>
+
+            <form onSubmit={handleIssueInvoice} className="space-y-4 text-xs">
+              {/* Top Grid: Invoice Header Info */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-slate-850 rounded-lg border border-slate-750">
+                <div className="md:col-span-1">
+                  <label className="text-slate-400 block mb-1">Billing Account</label>
+                  <select
+                    required
+                    value={invoiceForm.billing_account_id}
+                    onChange={(e) => setInvoiceForm({ ...invoiceForm, billing_account_id: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white"
+                  >
+                    <option value="">Select Account...</option>
+                    {accounts.map((a) => (
+                      <option key={a._id} value={a._id}>{a.customer_name} ({a.account_number})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Policy / Risk Ref</label>
                   <input
-                    type="number"
-                    value={invoiceForm.installment_number}
-                    onChange={(e) => setInvoiceForm({ ...invoiceForm, installment_number: Number(e.target.value) })}
+                    type="text"
+                    required
+                    value={invoiceForm.policy_id}
+                    onChange={(e) => setInvoiceForm({ ...invoiceForm, policy_id: e.target.value })}
                     className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white font-mono"
                   />
                 </div>
@@ -2458,15 +2879,33 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
                     className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white"
                   />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1">Installment #</label>
+                  <input
+                    type="number"
+                    value={invoiceForm.installment_number}
+                    onChange={(e) => setInvoiceForm({ ...invoiceForm, installment_number: Number(e.target.value) })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white font-mono"
+                  />
+                </div>
                 <div>
                   <label className="text-slate-400 block mb-1">Premium Amount ($)</label>
                   <input
                     type="text"
                     value={invoiceForm.premium_amount}
-                    onChange={(e) => setInvoiceForm({ ...invoiceForm, premium_amount: e.target.value })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white font-mono"
+                    onChange={(e) => {
+                      const newPrem = e.target.value;
+                      setInvoiceForm({ ...invoiceForm, premium_amount: newPrem });
+                      const feeVal = parseFloat(invoiceForm.fee_amount) || 0;
+                      const premVal = parseFloat(newPrem) || 0;
+                      const tot = (premVal + feeVal).toFixed(2);
+                      setInvoiceJournalLines([
+                        { account_code: '1100', debit: tot, credit: '0.00', memo: `Dr 1100 AR for Installment #${invoiceForm.installment_number}` },
+                        { account_code: '2200', debit: '0.00', credit: premVal.toFixed(2), memo: `Cr 2200 UPR for Installment #${invoiceForm.installment_number}` },
+                        ...(feeVal > 0 ? [{ account_code: '4100', debit: '0.00', credit: feeVal.toFixed(2), memo: 'Cr 4100 Policy Fee Income' }] : [])
+                      ]);
+                    }}
+                    className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white font-mono font-semibold"
                   />
                 </div>
                 <div>
@@ -2474,94 +2913,200 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
                   <input
                     type="text"
                     value={invoiceForm.fee_amount}
-                    onChange={(e) => setInvoiceForm({ ...invoiceForm, fee_amount: e.target.value })}
+                    onChange={(e) => {
+                      const newFee = e.target.value;
+                      setInvoiceForm({ ...invoiceForm, fee_amount: newFee });
+                      const feeVal = parseFloat(newFee) || 0;
+                      const premVal = parseFloat(invoiceForm.premium_amount) || 0;
+                      const tot = (premVal + feeVal).toFixed(2);
+                      setInvoiceJournalLines([
+                        { account_code: '1100', debit: tot, credit: '0.00', memo: `Dr 1100 AR for Installment #${invoiceForm.installment_number}` },
+                        { account_code: '2200', debit: '0.00', credit: premVal.toFixed(2), memo: `Cr 2200 UPR for Installment #${invoiceForm.installment_number}` },
+                        ...(feeVal > 0 ? [{ account_code: '4100', debit: '0.00', credit: feeVal.toFixed(2), memo: 'Cr 4100 Policy Fee Income' }] : [])
+                      ]);
+                    }}
                     className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white font-mono"
                   />
                 </div>
               </div>
-              {/* Posting Rule Selection & Validation */}
-              <div className="p-3 bg-slate-850 rounded border border-slate-750 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-slate-200 flex items-center space-x-1.5">
-                    <Sliders className="w-3.5 h-3.5 text-brand-400" />
-                    <span>Applied Posting Rule (Rules Engine)</span>
+
+              {/* Applied Posting Rule Header */}
+              <div className="p-2.5 bg-slate-850 rounded-lg border border-slate-750 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center space-x-2">
+                  <Sliders className="w-3.5 h-3.5 text-brand-400" />
+                  <span className="font-semibold text-slate-200 text-[11px]">Active Posting Rule:</span>
+                  <select
+                    value={selectedInvoiceRuleId || invoiceRules[0]?._id}
+                    onChange={(e) => setSelectedInvoiceRuleId(e.target.value)}
+                    className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white"
+                  >
+                    {invoiceRules.map((r) => (
+                      <option key={r._id} value={r._id}>
+                        {r.rule_code} — {r.rule_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center space-x-2 text-[10px] font-mono">
+                  <span className="px-1.5 py-0.5 rounded bg-brand-500/10 text-brand-400 border border-brand-500/30">
+                    EVENT: billing.invoice.issued
                   </span>
-                  {invoiceRules.length > 0 ? (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                      {invoiceRules.length} Rule(s) Active
-                    </span>
-                  ) : (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-rose-500/10 text-rose-400 border border-rose-500/30">
-                      No Rule Published
-                    </span>
-                  )}
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    DOUBLE-ENTRY GL
+                  </span>
+                </div>
+              </div>
+
+              {/* EDITABLE GENERAL LEDGER JOURNAL ENTRY LINES */}
+              <div className="space-y-2 p-3 bg-slate-850 rounded-lg border border-slate-750">
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold text-slate-200 text-[11px] flex items-center space-x-1.5">
+                    <BookOpen className="w-3.5 h-3.5 text-brand-400" />
+                    <span>General Ledger Journal Lines (Review &amp; Edit Target GL Codes)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addJournalLine}
+                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-brand-400 rounded text-[11px] font-semibold flex items-center space-x-1 border border-slate-700 transition"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Add GL Line</span>
+                  </button>
                 </div>
 
-                {invoiceRules.length > 0 ? (
-                  <div className="space-y-2">
-                    <select
-                      value={selectedInvoiceRuleId || invoiceRules[0]?._id}
-                      onChange={(e) => setSelectedInvoiceRuleId(e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-xs text-white"
-                    >
-                      {invoiceRules.map((r) => (
-                        <option key={r._id} value={r._id}>
-                          {r.rule_code} — {r.rule_name} (Priority {r.priority})
-                        </option>
-                      ))}
-                    </select>
-                    <div className="font-mono text-[11px] text-slate-300 space-y-0.5 pt-1">
-                      <div>Dr 1100 Premium Receivable: ${(Number(invoiceForm.premium_amount || 0) + Number(invoiceForm.fee_amount || 0)).toFixed(2)}</div>
-                      <div>Cr 2200 Unearned Premium Reserve: ${Number(invoiceForm.premium_amount || 0).toFixed(2)}</div>
-                      {Number(invoiceForm.fee_amount || 0) > 0 && (
-                        <div>Cr 4100 Policy Fee Income: ${Number(invoiceForm.fee_amount || 0).toFixed(2)}</div>
-                      )}
-                    </div>
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {invoiceJournalLines.map((line, idx) => {
+                    const isDebit = parseFloat(line.debit) > 0;
+                    const amountVal = isDebit ? line.debit : line.credit;
+                    const coaList = glAccounts.length > 0 ? glAccounts : defaultCOA;
+
+                    return (
+                      <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+                        {/* Column: Target GL Account (Code & Name) */}
+                        <div className="col-span-5">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">GL Account (Code &amp; Name)</label>
+                          <select
+                            required
+                            value={line.account_code}
+                            onChange={(e) => handleJournalLineChange(idx, 'account_code', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-white font-mono focus:border-brand-500 focus:outline-none"
+                          >
+                            {coaList.map((acc) => (
+                              <option key={acc._id || acc.account_code} value={acc.account_code}>
+                                {acc.account_code} — {acc.account_name} ({acc.account_type})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Column: Type (Debit / Credit) */}
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Type</label>
+                          <select
+                            value={isDebit ? 'DEBIT' : 'CREDIT'}
+                            onChange={(e) => handleJournalLineChange(idx, 'type', e.target.value)}
+                            className={`w-full px-2 py-1.5 rounded text-xs font-semibold font-mono focus:outline-none border ${
+                              isDebit
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                            }`}
+                          >
+                            <option value="DEBIT">Dr (Debit)</option>
+                            <option value="CREDIT">Cr (Credit)</option>
+                          </select>
+                        </div>
+
+                        {/* Column: Amount */}
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Amount ($)</label>
+                          <input
+                            type="text"
+                            required
+                            value={amountVal}
+                            onChange={(e) => handleJournalLineChange(idx, 'amount', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-white font-mono font-semibold focus:border-brand-500 focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Column: Memo / Description */}
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Line Memo</label>
+                          <input
+                            type="text"
+                            value={line.memo || ''}
+                            onChange={(e) => handleJournalLineChange(idx, 'memo', e.target.value)}
+                            placeholder="Description"
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-300 focus:border-brand-500 focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Column: Delete Action */}
+                        <div className="col-span-1 text-center pt-3">
+                          <button
+                            type="button"
+                            onClick={() => removeJournalLine(idx)}
+                            disabled={invoiceJournalLines.length <= 2}
+                            className="text-slate-500 hover:text-rose-400 text-xs disabled:opacity-20 cursor-pointer transition p-1"
+                            title={invoiceJournalLines.length <= 2 ? 'Minimum 2 journal lines required' : 'Delete line'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Real-Time Balance Status Bar */}
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs font-mono">
+                  <div className="flex items-center space-x-4">
+                    <span className="text-emerald-400">Total Debits: <strong>${invoiceJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0).toFixed(2)}</strong></span>
+                    <span className="text-purple-400">Total Credits: <strong>${invoiceJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0).toFixed(2)}</strong></span>
                   </div>
-                ) : (
-                  <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded text-xs text-rose-400 space-y-2">
-                    <div className="font-semibold flex items-center space-x-1.5">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>Posting Rule Required for GL Auto-Posting</span>
-                    </div>
-                    <div>
-                      No active rule found for <code>billing.invoice.issued</code>. Click below to auto-seed master insurance rules (Dr 1100 AR / Cr 2200 UPR / Cr 4100 Fees) and enable posting.
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleSeedPostingRules}
-                      disabled={loading}
-                      className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded font-semibold flex items-center space-x-1.5 transition"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>⚡ Auto-Seed Master Posting Rules Now</span>
-                    </button>
-                  </div>
-                )}
+
+                  {(() => {
+                    const d = invoiceJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0);
+                    const c = invoiceJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
+                    const diff = Math.abs(d - c);
+                    const balanced = diff < 0.01 && d > 0;
+
+                    return balanced ? (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-sans font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>✓ Balanced &amp; Ready to Post</span>
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-sans font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center space-x-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>⚠ Imbalance: ${diff.toFixed(2)}</span>
+                      </span>
+                    );
+                  })()}
+                </div>
               </div>
 
               <div className="flex justify-end space-x-2 pt-3 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowIssueInvoiceModal(false)}
-                  className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded"
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-medium transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={invoiceRules.length === 0}
-                  className={`px-4 py-1.5 rounded font-semibold text-white transition ${
-                    invoiceRules.length === 0
-                      ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                      : 'bg-brand-600 hover:bg-brand-500'
+                  disabled={loading || invoiceRules.length === 0 || Math.abs(invoiceJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0) - invoiceJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0)) > 0.01}
+                  className={`px-4 py-1.5 rounded font-semibold text-white flex items-center space-x-1.5 shadow-sm transition ${
+                    loading || invoiceRules.length === 0 || Math.abs(invoiceJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0) - invoiceJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0)) > 0.01
+                      ? 'bg-slate-700 text-slate-500 cursor-not-allowed opacity-60'
+                      : 'bg-brand-600 hover:bg-brand-500 cursor-pointer'
                   }`}
                 >
-                  Issue Invoice
+                  <Receipt className="w-3.5 h-3.5" />
+                  <span>{loading ? 'Posting...' : 'Issue Invoice & Post Journal'}</span>
                 </button>
               </div>
             </form>
-            <ModalClose onClick={() => setShowIssueInvoiceModal(false)} />
           </div>
         </div>
       )}
@@ -2569,8 +3114,25 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
       {/* MODAL: Record Payment */}
       {showRecordPaymentModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl">
-            <h3 className="text-base font-bold text-white">Record Cash Receipt & Waterfall Allocate</h3>
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-3xl w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-center">
+                  <BookOpen className="w-4 h-4 text-brand-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Record Cash Receipt &amp; General Ledger Impact</h3>
+                  <p className="text-xs text-slate-400">Post fiduciary cash receipt and double-entry AR knock-off to General Ledger</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRecordPaymentModal(false)}
+                className="text-slate-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
             <form onSubmit={handleRecordPayment} className="space-y-3 text-xs">
               <div>
                 <label className="text-slate-400 block mb-1">Billing Account</label>
@@ -2588,43 +3150,103 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
               </div>
 
               {paymentForm.billing_account_id && (
-                <div className="space-y-1.5 p-2.5 bg-slate-850 rounded border border-slate-750">
+                <div className="space-y-2 p-3 bg-slate-850 rounded-lg border border-slate-750">
                   <div className="text-slate-300 font-semibold block text-[11px] flex items-center justify-between">
-                    <span>🧾 Target Invoice (Waterfall Allocation)</span>
+                    <span className="flex items-center space-x-1.5">
+                      <FileText className="w-3.5 h-3.5 text-brand-400" />
+                      <span>Target Invoice (Required) *</span>
+                    </span>
                     <span className="text-[10px] text-brand-400 font-mono">
-                      {openInvoicesForAccount.length} Open Invoice(s)
+                      {openInvoicesForAccount.length} Open Invoice(s) Available
                     </span>
                   </div>
+
                   {openInvoicesForAccount.length > 0 ? (
-                    <div>
+                    <div className="space-y-2">
                       <select
+                        required
+                        value={paymentForm.target_invoice_id || ''}
                         onChange={(e) => {
                           const invId = e.target.value;
                           const targetInv = openInvoicesForAccount.find((i) => i._id === invId);
                           if (targetInv) {
+                            const bDue = parseDecimalValue(targetInv.balance_due).toFixed(2);
                             setPaymentForm({
                               ...paymentForm,
-                              amount: Number(targetInv.balance_due).toFixed(2),
+                              amount: bDue,
                               target_invoice_id: targetInv._id
+                            });
+                            setPaymentJournalLines([
+                              {
+                                account_code: '1010',
+                                debit: bDue,
+                                credit: '0.00',
+                                memo: `Dr 1010 Texas Premium Trust - Payment for ${targetInv.invoice_number}`
+                              },
+                              {
+                                account_code: '1100',
+                                debit: '0.00',
+                                credit: bDue,
+                                memo: `Cr 1100 AR Knock-off (${targetInv.invoice_number})`
+                              }
+                            ]);
+                          } else {
+                            setPaymentForm({
+                              ...paymentForm,
+                              target_invoice_id: '',
+                              amount: ''
                             });
                           }
                         }}
-                        className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-xs text-white"
+                        className={`w-full bg-slate-800 border rounded p-2 text-xs text-white focus:outline-none transition ${
+                          !paymentForm.target_invoice_id
+                            ? 'border-amber-500/80 ring-1 ring-amber-500/40'
+                            : 'border-slate-700 focus:border-brand-500'
+                        }`}
                       >
-                        <option value="">-- Apply to Oldest Due (Standard Waterfall) --</option>
+                        <option value="">-- Select Target Invoice (Required) * --</option>
                         {openInvoicesForAccount.map((inv) => (
                           <option key={inv._id} value={inv._id}>
-                            {inv.invoice_number} (Policy: {inv.policy_id}) — Balance Due: ${Number(inv.balance_due).toFixed(2)}
+                            {inv.invoice_number} (Policy: {inv.policy_id}) — Total: ${formatMoney(inv.total_amount)} | Balance Due: ${formatMoney(inv.balance_due)}
                           </option>
                         ))}
                       </select>
-                      <div className="text-[10px] text-slate-400 mt-1">
-                        Select an invoice to auto-fill its exact balance due.
-                      </div>
+
+                      {!paymentForm.target_invoice_id ? (
+                        <div className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded p-2 flex items-center space-x-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span>Target invoice is required. Please select which open invoice to apply this payment to.</span>
+                        </div>
+                      ) : (
+                        (() => {
+                          const selInv = openInvoicesForAccount.find((i) => i._id === paymentForm.target_invoice_id);
+                          if (!selInv) return null;
+                          return (
+                            <div className="p-2.5 bg-brand-500/10 border border-brand-500/30 rounded text-[11px] space-y-1">
+                              <div className="flex justify-between text-slate-200 font-semibold">
+                                <span>Target Invoice:</span>
+                                <span className="font-mono text-brand-400">{selInv.invoice_number}</span>
+                              </div>
+                              <div className="flex justify-between text-slate-400">
+                                <span>Policy Link:</span>
+                                <span className="font-mono text-slate-300">{selInv.policy_id}</span>
+                              </div>
+                              <div className="flex justify-between text-slate-400">
+                                <span>Original Invoice Total:</span>
+                                <span className="font-mono text-slate-300">${formatMoney(selInv.total_amount)}</span>
+                              </div>
+                              <div className="flex justify-between text-slate-400">
+                                <span>Outstanding Balance Due:</span>
+                                <span className="font-mono font-bold text-emerald-400">${formatMoney(selInv.balance_due)}</span>
+                              </div>
+                            </div>
+                          );
+                        })()
+                      )}
                     </div>
                   ) : (
                     <div className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded p-2">
-                      ℹ️ Is account par koi bhi unpaid/open invoice nahi hai. Agar aap payment record karenge to ye poora amount Unapplied Cash (Account 2190) me reserve ho jayega.
+                      ℹ️ There are no open/unpaid invoices for this account. Please issue an invoice first before recording cash receipt.
                     </div>
                   )}
                 </div>
@@ -2637,7 +3259,7 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
                     type="text"
                     required
                     value={paymentForm.amount}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                    onChange={(e) => handlePaymentAmountChange(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white font-mono"
                   />
                 </div>
@@ -2664,82 +3286,161 @@ export default function BillingWorkspacePage({ section, onSectionChange }) {
                   className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white font-mono"
                 />
               </div>
-              {/* Payment Posting Rule Display & Validation */}
-              <div className="p-3 bg-slate-850 rounded border border-slate-750 space-y-2">
+              {/* Double-Entry GL Journal Lines & Rule Configuration */}
+              <div className="p-3.5 bg-slate-950/80 rounded-lg border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-slate-200 flex items-center space-x-1.5">
-                    <Sliders className="w-3.5 h-3.5 text-brand-400" />
-                    <span>Applied Payment Rule (Texas Trust)</span>
-                  </span>
-                  {paymentRules.length > 0 ? (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                      {paymentRules.length} Rule(s) Active
+                  <div className="flex items-center space-x-2">
+                    <BookOpen className="w-3.5 h-3.5 text-brand-400" />
+                    <span className="text-xs font-semibold text-slate-200">
+                      Double-Entry General Ledger Verification &amp; Posting Rules
                     </span>
-                  ) : (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-rose-500/10 text-rose-400 border border-rose-500/30">
-                      No Rule Published
-                    </span>
-                  )}
-                </div>
-
-                {paymentRules.length > 0 ? (
-                  <div className="space-y-2">
-                    <select
-                      value={selectedPaymentRuleId || paymentRules[0]?._id}
-                      onChange={(e) => setSelectedPaymentRuleId(e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-xs text-white"
-                    >
-                      {paymentRules.map((r) => (
-                        <option key={r._id} value={r._id}>
-                          {r.rule_code} — {r.rule_name} (Priority {r.priority})
-                        </option>
-                      ))}
-                    </select>
-                    <div className="font-mono text-[11px] text-slate-300 space-y-0.5 pt-1">
-                      <div>Dr 1010 Texas Premium Trust: ${paymentForm.amount || '0.00'}</div>
-                      <div>Cr 1100 AR (Waterfall Cleared): ${paymentForm.amount || '0.00'}</div>
-                    </div>
                   </div>
-                ) : (
-                  <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded text-xs text-rose-400 space-y-2">
-                    <div className="font-semibold flex items-center space-x-1.5">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>Payment Rule Required for GL Auto-Posting</span>
-                    </div>
-                    <div>
-                      No active rule found for <code>billing.payment.received</code>. Click below to auto-seed master insurance rules (Dr 1010 Trust / Cr 1100 AR / Cr 2190 Suspense) and enable posting.
-                    </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-brand-500/10 text-brand-400 border border-brand-500/30">
+                      RULE_PMT_RECEIVED
+                    </span>
                     <button
                       type="button"
-                      onClick={handleSeedPostingRules}
-                      disabled={loading}
-                      className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded font-semibold flex items-center space-x-1.5 transition"
+                      onClick={addPaymentJournalLine}
+                      className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-sans font-medium flex items-center space-x-1 border border-slate-750 transition"
                     >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>⚡ Auto-Seed Master Posting Rules Now</span>
+                      <Plus className="w-3 h-3 text-brand-400" />
+                      <span>Add Line</span>
                     </button>
                   </div>
-                )}
+                </div>
+
+                {/* Journal Lines Table */}
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {paymentJournalLines.map((line, idx) => {
+                    const isDebit = parseFloat(line.debit) > 0;
+                    const amountVal = isDebit ? line.debit : line.credit;
+                    const coaList = glAccounts.length > 0 ? glAccounts : defaultCOA;
+
+                    return (
+                      <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+                        {/* Column: Target GL Account (Code & Name) */}
+                        <div className="col-span-5">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">GL Account (Code &amp; Name)</label>
+                          <select
+                            required
+                            value={line.account_code}
+                            onChange={(e) => handlePaymentJournalLineChange(idx, 'account_code', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-white font-mono focus:border-brand-500 focus:outline-none"
+                          >
+                            {coaList.map((acc) => (
+                              <option key={acc._id || acc.account_code} value={acc.account_code}>
+                                {acc.account_code} — {acc.account_name} ({acc.account_type})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Column: Type (Debit / Credit) */}
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Type</label>
+                          <select
+                            value={isDebit ? 'DEBIT' : 'CREDIT'}
+                            onChange={(e) => handlePaymentJournalLineChange(idx, 'type', e.target.value)}
+                            className={`w-full px-2 py-1.5 rounded text-xs font-semibold font-mono focus:outline-none border ${
+                              isDebit
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                            }`}
+                          >
+                            <option value="DEBIT">Dr (Debit)</option>
+                            <option value="CREDIT">Cr (Credit)</option>
+                          </select>
+                        </div>
+
+                        {/* Column: Amount */}
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Amount ($)</label>
+                          <input
+                            type="text"
+                            required
+                            value={amountVal}
+                            onChange={(e) => handlePaymentJournalLineChange(idx, 'amount', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-white font-mono font-semibold focus:border-brand-500 focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Column: Memo / Description */}
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Line Memo</label>
+                          <input
+                            type="text"
+                            value={line.memo || ''}
+                            onChange={(e) => handlePaymentJournalLineChange(idx, 'memo', e.target.value)}
+                            placeholder="Description"
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-300 focus:border-brand-500 focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Column: Delete Action */}
+                        <div className="col-span-1 text-center pt-3">
+                          <button
+                            type="button"
+                            onClick={() => removePaymentJournalLine(idx)}
+                            disabled={paymentJournalLines.length <= 2}
+                            className="text-slate-500 hover:text-rose-400 text-xs disabled:opacity-20 cursor-pointer transition p-1"
+                            title={paymentJournalLines.length <= 2 ? 'Minimum 2 journal lines required' : 'Delete line'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Real-Time Balance Status Bar */}
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs font-mono">
+                  <div className="flex items-center space-x-4">
+                    <span className="text-emerald-400">Total Debits: <strong>${paymentJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0).toFixed(2)}</strong></span>
+                    <span className="text-purple-400">Total Credits: <strong>${paymentJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0).toFixed(2)}</strong></span>
+                  </div>
+
+                  {(() => {
+                    const d = paymentJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0);
+                    const c = paymentJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
+                    const diff = Math.abs(d - c);
+                    const balanced = diff < 0.01 && d > 0;
+
+                    return balanced ? (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-sans font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>✓ Balanced &amp; Ready to Post</span>
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-sans font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center space-x-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>⚠ Imbalance: ${diff.toFixed(2)}</span>
+                      </span>
+                    );
+                  })()}
+                </div>
               </div>
 
               <div className="flex justify-end space-x-2 pt-3 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowRecordPaymentModal(false)}
-                  className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded"
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-medium transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={paymentRules.length === 0}
-                  className={`px-4 py-1.5 rounded font-semibold text-white transition ${
-                    paymentRules.length === 0
-                      ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                      : 'bg-brand-600 hover:bg-brand-500'
+                  disabled={paymentRules.length === 0 || !paymentForm.target_invoice_id || !paymentForm.amount || parseFloat(paymentForm.amount) <= 0 || loading || Math.abs(paymentJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0) - paymentJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0)) > 0.01}
+                  className={`px-4 py-1.5 rounded font-semibold text-white flex items-center space-x-1.5 shadow-sm transition ${
+                    paymentRules.length === 0 || !paymentForm.target_invoice_id || !paymentForm.amount || parseFloat(paymentForm.amount) <= 0 || loading || Math.abs(paymentJournalLines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0) - paymentJournalLines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0)) > 0.01
+                      ? 'bg-slate-700 text-slate-500 cursor-not-allowed opacity-60'
+                      : 'bg-brand-600 hover:bg-brand-500 cursor-pointer'
                   }`}
                 >
-                  Capture Cash
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>{loading ? 'Processing...' : 'Capture Cash & Post Journal'}</span>
                 </button>
               </div>
             </form>

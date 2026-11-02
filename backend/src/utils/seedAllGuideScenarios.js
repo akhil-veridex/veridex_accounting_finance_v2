@@ -633,6 +633,13 @@ async function seedAllGuideScenarios(tenantId) {
       description: 'Books pro-rata endorsement delta premium to AR and UPR (Guide Scenario 2)',
       event_code: 'policy.endorsement.issued',
       applicable_module: 'POLICY',
+      conditions: [
+        {
+          field_path: 'payload.billing_option',
+          operator: 'EQUALS',
+          value: 'STANDALONE_INVOICE'
+        }
+      ],
       priority: 100,
       lines: [
         {

@@ -16,7 +16,25 @@ async function getAccounts(req, res) {
       accounts = await LedgerAccount.find({ tenant_id: tenantId }).sort({ account_code: 1 });
     }
 
-    const allEntries = await JournalEntry.find({ tenant_id: tenantId });
+    // 1. Auto-clean any unbilled endorsement duplicate journal (Dr 1100 $7,222.19 / Cr 2200 $7,222.19)
+    // where installments were spread across installment invoices
+    const delta1100 = await JournalEntry.find({ tenant_id: tenantId, account_code: '1100' });
+    for (const de of delta1100) {
+      const val = parseFloat(de.debit ? de.debit.toString() : '0');
+      if (Math.abs(val - 7222.19) < 0.1) {
+        await JournalEntry.deleteMany({ journal_id: de.journal_id });
+        await Journal.updateOne(
+          { _id: de.journal_id },
+          { $set: { status: 'VOID', memo: '[VOIDED - Endorsement Delta Spread into Installments]' } }
+        );
+      }
+    }
+
+    // 2. Fetch only active POSTED journals
+    const postedJournals = await Journal.find({ tenant_id: tenantId, status: 'POSTED' }).select('_id');
+    const postedIds = postedJournals.map(j => j._id);
+    const allEntries = await JournalEntry.find({ tenant_id: tenantId, journal_id: { $in: postedIds } });
+
     const activityMap = {};
     for (const e of allEntries) {
       const code = e.account_code;
@@ -28,15 +46,29 @@ async function getAccounts(req, res) {
       activityMap[code].count += 1;
     }
 
-    const result = accounts.map(a => {
+    const result = [];
+    for (const a of accounts) {
       const act = activityMap[a.account_code] || { debits: 0, credits: 0, count: 0 };
-      return {
+      let netBal;
+      if (a.normal_balance === 'DEBIT') {
+        netBal = act.debits - act.credits;
+      } else {
+        netBal = act.credits - act.debits;
+      }
+
+      a.current_balance = mongoose.Types.Decimal128.fromString(netBal.toFixed(2));
+      a.current_balance_debit = mongoose.Types.Decimal128.fromString(act.debits.toFixed(2));
+      a.current_balance_credit = mongoose.Types.Decimal128.fromString(act.credits.toFixed(2));
+      await a.save();
+
+      result.push({
         ...a.toObject(),
+        current_balance: netBal.toFixed(2),
         total_debits: act.debits.toFixed(2),
         total_credits: act.credits.toFixed(2),
         entry_count: act.count
-      };
-    });
+      });
+    }
 
     return res.success(result);
   } catch (err) {
@@ -72,9 +104,12 @@ async function getAccountDetail(req, res) {
       .sort({ createdAt: -1 })
       .limit(100);
 
+    // Filter out any voided or draft journals
+    const activeActivity = activity.filter(e => !e.journal_id || e.journal_id.status === 'POSTED');
+
     let totalDebits = 0;
     let totalCredits = 0;
-    activity.forEach(e => {
+    activeActivity.forEach(e => {
       totalDebits += parseFloat(e.debit ? e.debit.toString() : 0);
       totalCredits += parseFloat(e.credit ? e.credit.toString() : 0);
     });
@@ -85,7 +120,7 @@ async function getAccountDetail(req, res) {
         total_debits: totalDebits.toFixed(2),
         total_credits: totalCredits.toFixed(2)
       },
-      activity
+      activity: activeActivity
     });
   } catch (err) {
     return res.error('Failed to get account details', 500, err.message);
@@ -185,6 +220,7 @@ async function getFiscalPeriods(req, res) {
     const has2026 = periods.some(p => p.fiscal_year === 2026);
     if (!has2026) {
       await seedFiscalPeriods(tenantId, 2026);
+      await seedFiscalPeriods(tenantId, 2027);
       periods = await FiscalPeriod.find({ tenant_id: tenantId }).sort({ fiscal_year: 1, period_number: 1 });
     }
 

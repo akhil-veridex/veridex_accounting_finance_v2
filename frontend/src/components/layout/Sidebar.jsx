@@ -6,6 +6,8 @@ import { MonogramLogo, ChevronIcon, CollapseIcon } from './Icons';
  * collapsible groups, 64px collapsed rail) but is driven by the ERP's
  * tab state instead of react-router.
  *
+ * Supports drag-to-resize/stretch width with localStorage persistence.
+ *
  * groups: [{ id, label, icon, items: [{ id, label, icon }] }]
  */
 export default function Sidebar({ groups, activeTab, onSelect, isCollapsed, onToggleCollapse }) {
@@ -14,6 +16,40 @@ export default function Sidebar({ groups, activeTab, onSelect, isCollapsed, onTo
     groups.forEach(g => { initial[g.id] = g.items.some(i => i.id === activeTab); });
     return initial;
   });
+
+  // Stretchable sidebar width logic & persistence
+  useEffect(() => {
+    try {
+      const savedWidth = localStorage.getItem('v_sidebar_width');
+      if (savedWidth) {
+        document.documentElement.style.setProperty('--vdx-sidebar-width-expanded', savedWidth);
+        document.documentElement.style.setProperty('--sidebar-width', savedWidth);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleMouseDownResize = (e) => {
+    e.preventDefault();
+    const onMouseMove = (moveEvent) => {
+      const minW = 280;
+      const maxW = 560;
+      const newWidth = Math.max(minW, Math.min(maxW, moveEvent.clientX));
+      const widthStr = `${newWidth}px`;
+      document.documentElement.style.setProperty('--vdx-sidebar-width-expanded', widthStr);
+      document.documentElement.style.setProperty('--sidebar-width', widthStr);
+      try {
+        localStorage.setItem('v_sidebar_width', widthStr);
+      } catch { /* ignore */ }
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
 
   // Keep the group that owns the current page open
   useEffect(() => {
@@ -102,6 +138,25 @@ export default function Sidebar({ groups, activeTab, onSelect, isCollapsed, onTo
         <CollapseIcon />
         <span className="nav-collapse-text">{isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}</span>
       </button>
+
+      {/* Drag-to-stretch resize border handle */}
+      {!isCollapsed && (
+        <div
+          className="sidebar-resizer"
+          onMouseDown={handleMouseDownResize}
+          title="Drag to stretch or shrink sidebar width"
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: '6px',
+            height: '100%',
+            cursor: 'col-resize',
+            zIndex: 50,
+            userSelect: 'none'
+          }}
+        />
+      )}
     </aside>
   );
 }

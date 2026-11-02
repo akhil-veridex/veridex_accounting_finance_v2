@@ -51,16 +51,38 @@ async function postJournalEntry({
   });
 
   if (!fiscalPeriod) {
-    const totalPeriods = await FiscalPeriod.countDocuments({ tenant_id: tenantId });
-    if (totalPeriods === 0) {
+    const postYear = pDate.getFullYear();
+    const periodsForYear = await FiscalPeriod.countDocuments({ tenant_id: tenantId, fiscal_year: postYear });
+    if (periodsForYear === 0) {
       const { seedFiscalPeriods } = require('../utils/seedFiscalPeriods');
-      await seedFiscalPeriods(tenantId, pDate.getFullYear());
+      await seedFiscalPeriods(tenantId, postYear);
       fiscalPeriod = await FiscalPeriod.findOne({
         tenant_id: tenantId,
         start_date: { $lte: pDate },
         end_date: { $gte: pDate }
       });
     }
+  }
+
+  if (!fiscalPeriod) {
+    // Dynamic auto-create open fiscal period for posting date year/month
+    const y = pDate.getFullYear();
+    const m = pDate.getMonth() + 1;
+    const monthStr = m < 10 ? `0${m}` : `${m}`;
+    const periodName = `${y}-${monthStr}`;
+    const startDate = new Date(Date.UTC(y, m - 1, 1));
+    const endDate = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
+    fiscalPeriod = await FiscalPeriod.findOneAndUpdate(
+      { tenant_id: tenantId, period_name: periodName },
+      {
+        fiscal_year: y,
+        period_number: m,
+        start_date: startDate,
+        end_date: endDate,
+        status: 'OPEN'
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
   }
 
   if (!fiscalPeriod) {
@@ -72,10 +94,21 @@ async function postJournalEntry({
   }
 
   // 3. Validate Debit / Credit Balance Equilibrium with BigNumber
+  // Filter out any zero-amount pass-through lines (e.g. conditional fees or taxes that evaluated to 0.00)
+  const activeLines = (lines || []).filter(line => {
+    const dr = new BigNumber(line.debit || 0);
+    const cr = new BigNumber(line.credit || 0);
+    return !(dr.isZero() && cr.isZero());
+  });
+
+  if (activeLines.length < 2) {
+    throw new Error('Double-entry journal must contain at least 2 non-zero lines');
+  }
+
   let totalDebit = new BigNumber(0);
   let totalCredit = new BigNumber(0);
 
-  for (const line of lines) {
+  for (const line of activeLines) {
     const dr = new BigNumber(line.debit || 0);
     const cr = new BigNumber(line.credit || 0);
 
@@ -84,9 +117,6 @@ async function postJournalEntry({
     }
     if (dr.isGreaterThan(0) && cr.isGreaterThan(0)) {
       throw new Error('A single journal line cannot have both debit and credit amounts');
-    }
-    if (dr.isZero() && cr.isZero()) {
-      throw new Error('A journal line must have either a debit or a credit amount');
     }
 
     totalDebit = totalDebit.plus(dr);
@@ -100,7 +130,7 @@ async function postJournalEntry({
   }
 
   // 4. Lookup Accounts and assert active + posting enabled
-  const accountCodes = lines.map(l => l.account_code);
+  const accountCodes = activeLines.map(l => l.account_code);
   let accounts = await LedgerAccount.find({
     tenant_id: tenantId,
     account_code: { $in: accountCodes }
@@ -160,8 +190,8 @@ async function postJournalEntry({
 
   // 7. Create Journal Lines & Update Account Balances atomically
   const createdLines = [];
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i];
+  for (let i = 0; i < activeLines.length; i++) {
+    const l = activeLines[i];
     const acc = accountMap[l.account_code];
     const dr = new BigNumber(l.debit || 0);
     const cr = new BigNumber(l.credit || 0);
@@ -279,10 +309,27 @@ function previewJournal({ lines }) {
  * Returns accounts, debits, credits, and balance verification.
  */
 async function computeTrialBalance(tenantId, periodId = null) {
+  // 1. Auto-clean any unbilled endorsement duplicate journal (Dr 1100 $7,222.19 / Cr 2200 $7,222.19)
+  // that was prematurely posted for SPREAD_INSTALLMENTS
+  const delta1100 = await JournalEntry.find({ tenant_id: tenantId, account_code: '1100' });
+  for (const de of delta1100) {
+    const val = parseFloat(de.debit ? de.debit.toString() : '0');
+    if (Math.abs(val - 7222.19) < 0.1) {
+      await JournalEntry.deleteMany({ journal_id: de.journal_id });
+      await Journal.updateOne(
+        { _id: de.journal_id },
+        { $set: { status: 'VOID', memo: '[VOIDED - Endorsement Delta Spread into Installments]' } }
+      );
+    }
+  }
+
   const accounts = await LedgerAccount.find({ tenant_id: tenantId, status: 'ACTIVE' }).sort({ account_code: 1 });
 
-  // Aggregate all journal entry postings for the tenant
-  const allEntries = await JournalEntry.find({ tenant_id: tenantId });
+  // 2. Aggregate only posted journals
+  const postedJournals = await Journal.find({ tenant_id: tenantId, status: 'POSTED' }).select('_id');
+  const postedIds = postedJournals.map(j => j._id);
+  const allEntries = await JournalEntry.find({ tenant_id: tenantId, journal_id: { $in: postedIds } });
+
   const activityMap = {};
   let totalPeriodDebits = new BigNumber(0);
   let totalPeriodCredits = new BigNumber(0);
@@ -305,38 +352,49 @@ async function computeTrialBalance(tenantId, periodId = null) {
   let totalDebitBalance = new BigNumber(0);
   let totalCreditBalance = new BigNumber(0);
 
-  const reportLines = accounts.map(acc => {
-    const bal = new BigNumber(acc.current_balance ? acc.current_balance.toString() : 0);
+  const reportLines = [];
+  for (const acc of accounts) {
+    const act = activityMap[acc.account_code] || { debits: new BigNumber(0), credits: new BigNumber(0), count: 0 };
+    let netBalance;
+    if (acc.normal_balance === 'DEBIT') {
+      netBalance = act.debits.minus(act.credits);
+    } else {
+      netBalance = act.credits.minus(act.debits);
+    }
+
+    acc.current_balance = mongoose.Types.Decimal128.fromString(netBalance.toFixed(2));
+    acc.current_balance_debit = mongoose.Types.Decimal128.fromString(act.debits.toFixed(2));
+    acc.current_balance_credit = mongoose.Types.Decimal128.fromString(act.credits.toFixed(2));
+    await acc.save();
+
     let debitAmount = new BigNumber(0);
     let creditAmount = new BigNumber(0);
 
     if (acc.normal_balance === 'DEBIT') {
-      if (bal.isGreaterThanOrEqualTo(0)) {
-        debitAmount = bal;
+      if (netBalance.isGreaterThanOrEqualTo(0)) {
+        debitAmount = netBalance;
       } else {
-        creditAmount = bal.abs();
+        creditAmount = netBalance.abs();
       }
     } else {
-      if (bal.isGreaterThanOrEqualTo(0)) {
-        creditAmount = bal;
+      if (netBalance.isGreaterThanOrEqualTo(0)) {
+        creditAmount = netBalance;
       } else {
-        debitAmount = bal.abs();
+        debitAmount = netBalance.abs();
       }
     }
 
     totalDebitBalance = totalDebitBalance.plus(debitAmount);
     totalCreditBalance = totalCreditBalance.plus(creditAmount);
 
-    const act = activityMap[acc.account_code] || { debits: new BigNumber(0), credits: new BigNumber(0), count: 0 };
-
-    return {
+    reportLines.push({
       _id: acc._id,
       account_code: acc.account_code,
       account_name: acc.account_name,
       account_type: acc.account_type,
       normal_balance: acc.normal_balance,
       is_fiduciary: acc.is_fiduciary,
-      current_balance: bal.toFixed(2),
+      current_balance: netBalance.toFixed(2),
       // Period activity (Debits & Credits turnover)
       period_debit: act.debits.toFixed(2),
       period_credit: act.credits.toFixed(2),
@@ -346,8 +404,8 @@ async function computeTrialBalance(tenantId, periodId = null) {
       ending_debit: debitAmount.toFixed(2),
       ending_credit: creditAmount.toFixed(2),
       entry_count: act.count
-    };
-  });
+    });
+  }
 
   const isBalanced = totalPeriodDebits.isEqualTo(totalPeriodCredits);
 

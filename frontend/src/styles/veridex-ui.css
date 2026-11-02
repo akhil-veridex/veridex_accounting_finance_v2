@@ -3490,3 +3490,8 @@ textarea:focus {
     text-align: center;
   }
 }
+
+.sidebar-resizer:hover, .sidebar-resizer:active {
+  background-color: var(--color-brand, #ff5722) !important;
+  box-shadow: 0 0 6px rgba(255, 87, 34, 0.6);
+}

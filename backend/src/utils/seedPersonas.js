@@ -322,6 +322,7 @@ async function seedPersonas() {
     // 6. Seed Chart of Accounts & Fiscal Periods
     await seedTenantChartOfAccounts(tenant._id);
     await seedFiscalPeriods(tenant._id, 2026);
+    await seedFiscalPeriods(tenant._id, 2027);
 
     // 7. Seed Counterparties (Party & PartyRole)
     for (const cp of persona.counterparties) {

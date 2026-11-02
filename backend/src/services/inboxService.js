@@ -217,14 +217,20 @@ async function processEventForConsumer(outboxEvent, consumerName = 'JE_RULES_CON
       });
     }
 
-    // Prepare journal lines
-    const journalLines = sim.lines.map(l => ({
-      account_code: l.account_code,
-      debit: l.debit,
-      credit: l.credit,
-      memo: l.memo || `Event ${eventType}`,
-      dimensions: l.dimensions
-    }));
+    // Prepare journal lines (filter out any zero-value conditional lines e.g. policy fees of 0.00)
+    const journalLines = sim.lines
+      .filter(l => {
+        const dr = parseFloat(l.debit || 0);
+        const cr = parseFloat(l.credit || 0);
+        return dr > 0 || cr > 0;
+      })
+      .map(l => ({
+        account_code: l.account_code,
+        debit: l.debit,
+        credit: l.credit,
+        memo: l.memo || `Event ${eventType}`,
+        dimensions: l.dimensions
+      }));
 
     // Post to General Ledger using existing GL engine
     const glResult = await postJournalEntry({

@@ -905,12 +905,32 @@ async function previewSettlementStatement({
   const effectiveCarrierCode = carrier ? carrier.party_code : (carrierPartyId || 'CARRIER-SUMMIT');
   const effectiveCarrierName = carrier ? (carrier.legal_name || carrier.trade_name) : 'Summit Mutual Insurance Company';
 
-  // 2. Check if a statement already exists for this carrier in this period
-  const existingStatement = await SettlementStatement.findOne({
+  // 2. Query settled invoices and existing statements
+  const allStatements = await SettlementStatement.find({
     tenant_id: tenantId,
-    carrier_party_id: effectiveCarrierCode,
-    status: { $in: ['DRAFT', 'APPROVED', 'PAID'] }
-  }).sort({ created_at: -1 });
+    carrier_party_id: effectiveCarrierCode
+  }).sort({ created_at: -1 }).lean();
+
+  const approvedOrPaidStatementIds = allStatements
+    .filter(s => ['APPROVED', 'PAID'].includes(s.status))
+    .map(s => s._id);
+
+  const pendingStatement = allStatements.find(s => ['DRAFT', 'APPROVED'].includes(s.status));
+  const latestPaidStatement = allStatements.find(s => s.status === 'PAID');
+
+  const settledLines = await SettlementLine.find({
+    tenant_id: tenantId,
+    statement_id: { $in: approvedOrPaidStatementIds },
+    line_type: 'GROSS_PREMIUM'
+  }).lean();
+
+  const settledInvoiceSet = new Set();
+  for (const sl of settledLines) {
+    if (sl.source_entity_id) {
+      const parts = sl.source_entity_id.split('-INV-');
+      settledInvoiceSet.add(parts.length > 1 ? parts[1] : sl.source_entity_id);
+    }
+  }
 
   // 3. Query eligible collected and allocated invoices
   const carrierMatchers = [
@@ -931,6 +951,7 @@ async function previewSettlementStatement({
   let totalGross = new BigNumber(0);
   let totalWithheld = new BigNumber(0);
   const eligibleItems = [];
+  const settledItems = [];
 
   for (const inv of liveInvoices) {
     if (!inv.is_allocated && inv.allocation_status !== 'ALLOCATED' && inv.status !== 'PAID') {
@@ -954,10 +975,9 @@ async function previewSettlementStatement({
     const withheld = purePremium.multipliedBy(0.20); // 20% MGA Commission Withholding
     const netDue = purePremium.minus(withheld);
 
-    totalGross = totalGross.plus(purePremium);
-    totalWithheld = totalWithheld.plus(withheld);
+    const isAlreadySettled = settledInvoiceSet.has(inv.invoice_number) || inv.settlement_status === 'SETTLED';
 
-    eligibleItems.push({
+    const item = {
       invoice_id: inv._id,
       invoice_number: inv.invoice_number,
       policy_id: inv.policy_id || 'POL-TX-8821',
@@ -966,12 +986,21 @@ async function previewSettlementStatement({
       gross_premium: purePremium.toFixed(2),
       commission_withheld: withheld.toFixed(2),
       net_due_carrier: netDue.toFixed(2),
-      status: inv.status
-    });
+      status: inv.status,
+      is_settled: isAlreadySettled
+    };
+
+    if (isAlreadySettled) {
+      settledItems.push(item);
+    } else {
+      totalGross = totalGross.plus(purePremium);
+      totalWithheld = totalWithheld.plus(withheld);
+      eligibleItems.push(item);
+    }
   }
 
   // Fallback for initial demo seed if no live invoices matched but carrier is Summit
-  if (totalGross.isZero() && effectiveCarrierCode === 'CARRIER-SUMMIT' && !existingStatement) {
+  if (eligibleItems.length === 0 && settledItems.length === 0 && effectiveCarrierCode === 'CARRIER-SUMMIT') {
     totalGross = new BigNumber('9412.50');
     totalWithheld = new BigNumber('1882.50');
     eligibleItems.push({
@@ -983,33 +1012,38 @@ async function previewSettlementStatement({
       gross_premium: '9412.50',
       commission_withheld: '1882.50',
       net_due_carrier: '7530.00',
-      status: 'PAID'
+      status: 'PAID',
+      is_settled: false
     });
   }
 
+  const hasUnsettled = eligibleItems.length > 0;
   const netDueTotal = totalGross.minus(totalWithheld);
+
+  const displayStatement = pendingStatement || latestPaidStatement;
+  const isAlreadySettled = !hasUnsettled && !!latestPaidStatement;
 
   return {
     carrier_party_id: effectiveCarrierCode,
     carrier_name: effectiveCarrierName,
     reporting_period: period,
-    gross_eligible_premium: totalGross.toFixed(2),
-    commission_withheld: totalWithheld.toFixed(2),
+    gross_eligible_premium: hasUnsettled ? totalGross.toFixed(2) : (displayStatement?.gross_eligible_premium?.toString() || '0.00'),
+    commission_withheld: hasUnsettled ? totalWithheld.toFixed(2) : (displayStatement?.commission_withheld?.toString() || '0.00'),
     claims_offset: '0.00',
-    net_due_carrier: netDueTotal.toFixed(2),
-    eligible_invoices_count: eligibleItems.length,
-    eligible_invoices: eligibleItems,
-    already_settled: existingStatement?.status === 'PAID',
-    already_generated: !!existingStatement,
-    existing_statement: existingStatement ? {
-      statement_number: existingStatement.statement_number,
-      status: existingStatement.status,
-      gross: existingStatement.gross_eligible_premium?.toString(),
-      net: existingStatement.net_due_carrier?.toString(),
-      payment_reference: existingStatement.payment_reference
+    net_due_carrier: hasUnsettled ? netDueTotal.toFixed(2) : (displayStatement?.net_due_carrier?.toString() || '0.00'),
+    eligible_invoices_count: hasUnsettled ? eligibleItems.length : settledItems.length,
+    eligible_invoices: hasUnsettled ? eligibleItems : settledItems,
+    already_settled: isAlreadySettled,
+    already_generated: !!pendingStatement,
+    existing_statement: displayStatement ? {
+      statement_number: displayStatement.statement_number,
+      status: displayStatement.status,
+      gross: displayStatement.gross_eligible_premium?.toString(),
+      net: displayStatement.net_due_carrier?.toString(),
+      payment_reference: displayStatement.payment_reference
     } : null,
-    can_generate: !existingStatement && totalGross.isGreaterThan(0),
-    formula_notes: `Formula: Gross ($${totalGross.toFixed(2)}) - MGA Comm ($${totalWithheld.toFixed(2)}) - Claims ($0.00) = Net Due ($${netDueTotal.toFixed(2)})`
+    can_generate: !pendingStatement && hasUnsettled && totalGross.isGreaterThan(0),
+    formula_notes: `Formula: Gross ($${hasUnsettled ? totalGross.toFixed(2) : (displayStatement?.gross_eligible_premium?.toString() || '0.00')}) - MGA Comm ($${hasUnsettled ? totalWithheld.toFixed(2) : (displayStatement?.commission_withheld?.toString() || '0.00')}) - Claims ($0.00) = Net Due ($${hasUnsettled ? netDueTotal.toFixed(2) : (displayStatement?.net_due_carrier?.toString() || '0.00')})`
   };
 }
 
@@ -1066,14 +1100,35 @@ async function generateSettlementStatement({
   const effectiveCarrierCode = carrier ? carrier.party_code : (carrierPartyId || 'CARRIER-SUMMIT');
   const effectiveCarrierName = carrier ? (carrier.legal_name || carrier.trade_name) : 'Summit Mutual Insurance Company';
 
-  // 2. Prevent Duplicate Settlement Statement Generation
-  const existingStatement = await SettlementStatement.findOne({
+  // 2. Prevent Duplicate Settlement Statement Generation if an un-disbursed statement is open
+  const pendingStatement = await SettlementStatement.findOne({
     tenant_id: tenantId,
     carrier_party_id: effectiveCarrierCode,
-    status: { $in: ['DRAFT', 'APPROVED', 'PAID'] }
+    status: { $in: ['DRAFT', 'APPROVED'] }
   });
-  if (existingStatement) {
-    throw new Error(`A settlement statement (${existingStatement.statement_number}, Status: ${existingStatement.status}) already exists for ${effectiveCarrierName}. Duplicate generation is prevented.`);
+  if (pendingStatement) {
+    throw new Error(`A settlement statement (${pendingStatement.statement_number}, Status: ${pendingStatement.status}) already exists and is pending ACH disbursement for ${effectiveCarrierName}.`);
+  }
+
+  // Find already settled invoices to avoid duplicate inclusion
+  const existingSettledStatements = await SettlementStatement.find({
+    tenant_id: tenantId,
+    carrier_party_id: effectiveCarrierCode,
+    status: { $in: ['APPROVED', 'PAID'] }
+  }).lean();
+  const existingSettledIds = existingSettledStatements.map(s => s._id);
+  const existingSettledLines = await SettlementLine.find({
+    tenant_id: tenantId,
+    statement_id: { $in: existingSettledIds },
+    line_type: 'GROSS_PREMIUM'
+  }).lean();
+
+  const settledInvoiceSet = new Set();
+  for (const sl of existingSettledLines) {
+    if (sl.source_entity_id) {
+      const parts = sl.source_entity_id.split('-INV-');
+      settledInvoiceSet.add(parts.length > 1 ? parts[1] : sl.source_entity_id);
+    }
   }
 
   // 3. Query eligible collected and allocated invoices
@@ -1099,6 +1154,11 @@ async function generateSettlementStatement({
 
   for (const inv of liveInvoices) {
     if (!inv.is_allocated && inv.allocation_status !== 'ALLOCATED' && inv.status !== 'PAID') {
+      continue;
+    }
+
+    // Skip invoices that have already been settled
+    if (settledInvoiceSet.has(inv.invoice_number) || inv.settlement_status === 'SETTLED') {
       continue;
     }
 
@@ -1232,6 +1292,28 @@ async function disburseSettlementPayment({
 
     // Post balanced GL Journal: Debit Due to Carrier (2010), Credit Premium Trust (1010)
     if (isLegacy) {
+      let stmtLines = [
+        {
+          account_code: '2010',
+          debit: netDue.toFixed(2),
+          credit: '0.00',
+          memo: `Discharge Due to Carrier for ${stmt.statement_number}`
+        },
+        {
+          account_code: '1010',
+          debit: '0.00',
+          credit: netDue.toFixed(2),
+          memo: 'Disbursement from Texas § 4053 Premium Trust'
+        }
+      ];
+      if (customJournalLines && Array.isArray(customJournalLines) && customJournalLines.length >= 2) {
+        stmtLines = customJournalLines.map(l => ({
+          account_code: l.account_code,
+          debit: parseFloat(l.debit || 0).toFixed(2),
+          credit: parseFloat(l.credit || 0).toFixed(2),
+          memo: l.memo || `Carrier Settlement Disbursement for ${stmt.statement_number}`
+        }));
+      }
       lGlResult = await legacyDirectPost({
         tenantId,
         userId,
@@ -1239,20 +1321,7 @@ async function disburseSettlementPayment({
         sourceModule: 'COMMISSIONS_FIDUCIARY',
         referenceId: stmt.statement_number,
         memo: `Carrier Settlement Disbursement: ${stmt.carrier_name} (${paymentReference})`,
-        lines: [
-          {
-            account_code: '2010',
-            debit: netDue.toFixed(2),
-            credit: '0.00',
-            memo: `Discharge Due to Carrier for ${stmt.statement_number}`
-          },
-          {
-            account_code: '1010',
-            debit: '0.00',
-            credit: netDue.toFixed(2),
-            memo: 'Disbursement from Texas § 4053 Premium Trust'
-          }
-        ]
+        lines: stmtLines
       });
     }
 
