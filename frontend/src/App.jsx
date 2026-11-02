@@ -21,7 +21,8 @@ import ConfigBundlePage from './pages/ConfigBundlePage';
 import EventOperationsPage from './pages/EventOperationsPage';
 import DimensionsPage from './pages/DimensionsPage';
 
-import { useTheme } from './context/ThemeContext';
+import Sidebar from './components/layout/Sidebar';
+import Header from './components/layout/Header';
 import {
   ShieldCheck,
   Building2,
@@ -45,8 +46,24 @@ import {
   Activity,
   RotateCcw,
   Tags,
-  Sun,
-  Moon
+  FileText,
+  DollarSign,
+  Lock,
+  Globe,
+  Building,
+  Table,
+  ArrowRightLeft,
+  Download,
+  Send,
+  Calendar,
+  Database,
+  CreditCard,
+  FileSpreadsheet,
+  TrendingUp,
+  ShieldAlert,
+  Scale,
+  Clock,
+  PieChart
 } from 'lucide-react';
 import { authApi } from './services/api';
 
@@ -59,11 +76,23 @@ const TENANT_TYPE_BADGES = {
 
 export default function App() {
   const { user, currentWorkspace, availableWorkspaces, roles, loading, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const [authView, setAuthView] = useState('login'); // 'login' | 'register'
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [glSection, setGlSection] = useState('journals');
+  const [commSection, setCommSection] = useState('overview');
+  const [billSection, setBillSection] = useState('overview');
+  const [treasSection, setTreasSection] = useState('overview');
+  const [closeSection, setCloseSection] = useState('overview');
   const [showWorkspaceSwitcher, setShowWorkspaceSwitcher] = useState(false);
   const [clearingData, setClearingData] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('v_sb_collapsed') === '1'; } catch { return false; }
+  });
+
+  React.useEffect(() => {
+    document.body.classList.toggle('sb-collapsed', sidebarCollapsed);
+    try { localStorage.setItem('v_sb_collapsed', sidebarCollapsed ? '1' : '0'); } catch { /* ignore */ }
+  }, [sidebarCollapsed]);
 
   const handleClearTestData = async () => {
     const confirmed = window.confirm(
@@ -112,15 +141,66 @@ export default function App() {
     );
   }
 
-  // Core Financial Modules Navigation
+  // Overview and Master Data Navigation
   const financialNavItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'gl', label: 'General Ledger', icon: BookOpen },
-    { id: 'billing_ar', label: 'Billing & Accounts Receivable', icon: Receipt },
-    { id: 'commissions_fiduciary', label: 'Commissions & Settlements', icon: Percent },
-    { id: 'treasury_bank_rec', label: 'Treasury & Bank Reconciliation', icon: Landmark },
-    { id: 'finance_close', label: 'Finance Close & Financial Reports', icon: CalendarCheck },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }
+  ];
+  const masterDataNavItems = [
     { id: 'counterparties', label: 'Counterparties', icon: Users2 }
+  ];
+
+  // General Ledger sub-pages (each opens the GL workspace on that section)
+  const glNavItems = [
+    { id: 'gl:journals', label: 'Journal Register', icon: FileText },
+    { id: 'gl:trial_balance', label: 'Trial Balance', icon: DollarSign },
+    { id: 'gl:coa', label: 'Chart of Accounts (COA)', icon: BookOpen },
+    { id: 'gl:periods', label: 'Fiscal Periods & Lock', icon: Lock },
+    { id: 'gl:rules', label: 'Posting Rules', icon: Sliders },
+    { id: 'gl:fx', label: 'Exchange Rates', icon: Globe }
+  ];
+
+  // Billing, Treasury and Finance Close sub-pages (each opens its workspace on that section)
+  const billNavItems = [
+    { id: 'bill:overview', label: 'AR Overview', icon: Layers },
+    { id: 'bill:schedules', label: 'Installment Schedules', icon: Calendar },
+    { id: 'bill:invoices', label: 'Invoices & Lines', icon: FileText },
+    { id: 'bill:snapshots', label: 'Policy Snapshots & References', icon: Database },
+    { id: 'bill:payments', label: 'Payments & Waterfall', icon: DollarSign },
+    { id: 'bill:accounts', label: 'Billing Accounts', icon: CreditCard },
+    { id: 'bill:plans', label: 'Billing Plans (4-Pay)', icon: Sliders },
+    { id: 'bill:adjustments', label: 'Adjustments & Waivers', icon: Receipt }
+  ];
+  const treasNavItems = [
+    { id: 'treas:overview', label: 'Treasury Overview', icon: Landmark },
+    { id: 'treas:reconciliation', label: '2-Pane Bank Reconciliation', icon: FileCheck },
+    { id: 'treas:statements', label: 'Bank Statement Feeds', icon: FileSpreadsheet },
+    { id: 'treas:processors', label: 'Processor Settlements', icon: TrendingUp },
+    { id: 'treas:returns', label: 'NSF Returns & Dishonors', icon: RotateCcw },
+    { id: 'treas:refunds', label: 'Disbursed Refunds', icon: CreditCard },
+    { id: 'treas:dunning', label: 'Dunning & Collections', icon: ShieldAlert }
+  ];
+  const closeNavItems = [
+    { id: 'close:overview', label: 'Overview', icon: CalendarCheck },
+    { id: 'close:checklist', label: '7-Step Close Checklist', icon: FileCheck },
+    { id: 'close:reconciliation', label: 'Subledger Reconciliation', icon: Scale },
+    { id: 'close:upr', label: 'UPR & Earned Premium', icon: Clock },
+    { id: 'close:trial_balance', label: 'Trial Balance', icon: Layers },
+    { id: 'close:financial_statements', label: 'Financial Statements', icon: PieChart },
+    // Hidden from the sidebar for now (page and route are kept intact)
+    { id: 'close:export_batches', label: 'ERP Export Batches', icon: Download, hidden: true }
+  ];
+
+  // Commissions & Settlements sub-pages (each opens the workspace on that section)
+  const commNavItems = [
+    { id: 'comm:overview', label: 'Overview & Chain', icon: FileText },
+    { id: 'comm:agreements', label: 'Agreements', icon: Building },
+    { id: 'comm:schedules', label: 'Commission Schedules', icon: Layers },
+    { id: 'comm:profit_schedules', label: 'Profit Commission', icon: Table },
+    { id: 'comm:splits', label: 'Producer Splits', icon: ArrowRightLeft },
+    { id: 'comm:transactions', label: 'Commission Register', icon: DollarSign },
+    { id: 'comm:fiduciary', label: 'Fiduciary Trust & Sweeps', icon: ShieldCheck },
+    { id: 'comm:bordereaux', label: 'Bordereaux Runs', icon: Download },
+    { id: 'comm:settlements', label: 'Carrier Settlements', icon: Send }
   ];
 
   // Accounting Configuration & Rules-Driven Engine Navigation
@@ -145,192 +225,75 @@ export default function App() {
   const tenantType = currentWorkspace?.tenant_type || 'MGA';
   const typeBadge = TENANT_TYPE_BADGES[tenantType] || TENANT_TYPE_BADGES.MGA;
 
+  const activeKey = activeTab === 'gl' ? `gl:${glSection}` : activeTab === 'commissions_fiduciary' ? `comm:${commSection}` : activeTab === 'billing_ar' ? `bill:${billSection}` : activeTab === 'treasury_bank_rec' ? `treas:${treasSection}` : activeTab === 'finance_close' ? `close:${closeSection}` : activeTab;
+  const handleNavSelect = (key) => {
+    if (key.startsWith('gl:')) {
+      setGlSection(key.slice(3));
+      setActiveTab('gl');
+    } else if (key.startsWith('comm:')) {
+      setCommSection(key.slice(5));
+      setActiveTab('commissions_fiduciary');
+    } else if (key.startsWith('bill:')) {
+      setBillSection(key.slice(5));
+      setActiveTab('billing_ar');
+    } else if (key.startsWith('treas:')) {
+      setTreasSection(key.slice(6));
+      setActiveTab('treasury_bank_rec');
+    } else if (key.startsWith('close:')) {
+      setCloseSection(key.slice(6));
+      setActiveTab('finance_close');
+    } else {
+      setActiveTab(key);
+    }
+  };
+
+  const navGroups = [
+    { id: 'financial', label: 'Overview', icon: LayoutDashboard, items: financialNavItems },
+    { id: 'master_data', label: 'Master Data', icon: Users2, items: masterDataNavItems },
+    { id: 'gl', label: 'General Ledger', icon: BookOpen, items: glNavItems },
+    { id: 'billing', label: 'Billing & Accounts Receivable', icon: Receipt, items: billNavItems },
+    { id: 'commissions', label: 'Commissions & Settlements', icon: Percent, items: commNavItems },
+    { id: 'treasury', label: 'Treasury & Bank Reconciliation', icon: Landmark, items: treasNavItems },
+    { id: 'close', label: 'Finance Close & Financial Reports', icon: CalendarCheck, items: closeNavItems },
+    { id: 'rules', label: 'Accounting Configuration', icon: Sliders, items: rulesNavItems },
+    ...(isAdmin ? [{ id: 'admin', label: 'Administration', icon: Shield, items: adminNavItems }] : [])
+  ];
+  const activeGroup = navGroups.find(g => g.items.some(i => i.id === activeKey));
+  const activeItem = activeGroup?.items.find(i => i.id === activeKey);
+  const breadcrumbs = {
+    section: activeGroup?.label || 'Workspace',
+    page: activeItem?.label || 'Dashboard'
+  };
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* Top Navigation Bar */}
-      <header className="h-14 border-b border-slate-800 bg-slate-900/90 backdrop-blur px-5 flex items-center justify-between sticky top-0 z-40">
-        <div className="flex items-center space-x-6">
-          <div className="flex items-center space-x-2.5">
-            <div className="h-8 w-8 bg-brand-600 rounded-lg flex items-center justify-center text-white font-bold shadow-md shadow-brand-500/20">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="font-bold text-sm tracking-tight text-white">Veridex One</span>
-              <span className="text-[10px] ml-2 px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">v4.6</span>
-            </div>
-          </div>
+    <>
+      <a href="#main-content" className="skip-link">Skip to main content</a>
+      <Sidebar
+        groups={navGroups}
+        activeTab={activeKey}
+        onSelect={handleNavSelect}
+        isCollapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(c => !c)}
+      />
+      <Header
+        breadcrumbs={breadcrumbs}
+        workspace={currentWorkspace}
+        typeLabel={typeBadge.label}
+        onSwitchWorkspace={() => setShowWorkspaceSwitcher(true)}
+        onClearTestData={handleClearTestData}
+        clearing={clearingData}
+        user={user}
+        roles={roles}
+        onLogout={logout}
+      />
 
-          {/* Active Tenant Display & Switcher */}
-          <div className="relative">
-            <button
-              onClick={() => setShowWorkspaceSwitcher(true)}
-              className="flex items-center space-x-2.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs transition"
-              title="Click to switch active organization"
-            >
-              <Building2 className="w-3.5 h-3.5 text-brand-400" />
-              <span className="font-semibold text-slate-200">{currentWorkspace?.name || 'Select Workspace'}</span>
-              <span className={`px-1.5 py-0.2 text-[10px] font-mono font-semibold rounded border ${typeBadge.color}`}>
-                {typeBadge.label}
-              </span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-            </button>
-          </div>
-        </div>
-
-        {/* User Profile, Test Tools & Logout */}
-        <div className="flex items-center space-x-3">
-          {/* Day / Night Theme Toggle */}
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 border border-slate-700 text-xs font-medium transition cursor-pointer text-slate-200"
-            title={theme === 'dark' ? 'Switch to Day Mode (Light Theme)' : 'Switch to Night Mode (Dark Theme)'}
-          >
-            {theme === 'dark' ? (
-              <>
-                <Sun className="w-3.5 h-3.5 text-amber-400" />
-                <span className="text-[11px] font-medium text-slate-200">Day Mode</span>
-              </>
-            ) : (
-              <>
-                <Moon className="w-3.5 h-3.5 text-indigo-500" />
-                <span className="text-[11px] font-medium text-slate-700">Night Mode</span>
-              </>
-            )}
-          </button>
-
-          <button
-            onClick={handleClearTestData}
-            disabled={clearingData}
-            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 hover:text-rose-300 text-xs font-medium transition cursor-pointer"
-            title="Reset test data for this tenant workspace (Invoices, Payments, Schedules, Journals, Counterparties)"
-          >
-            <RotateCcw className={`w-3.5 h-3.5 ${clearingData ? 'animate-spin' : ''}`} />
-            <span>{clearingData ? 'Clearing...' : 'Clear Test Data'}</span>
-          </button>
-
-          <div className="text-right">
-            <div className="text-xs font-semibold text-slate-200">
-              {user.first_name} {user.last_name}
-            </div>
-            <div className="text-[11px] text-brand-400 font-mono font-medium">
-              {roles.join(', ') || 'Staff Member'}
-            </div>
-          </div>
-          <button
-            onClick={logout}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/40 hover:text-rose-400 border border-slate-700 text-slate-400 transition"
-            title="Log Out"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
-
-      {/* Main Layout Body */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar */}
-        <aside className="w-64 border-r border-slate-800 bg-slate-900/40 p-4 space-y-6 shrink-0 flex flex-col justify-between">
-          <div className="space-y-4">
-            {/* Financial Modules Group */}
-            <div className="space-y-1">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 px-3 mb-2">
-                Financial Operations
-              </div>
-              {financialNavItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setActiveTab(item.id)}
-                    className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium transition ${
-                      isActive
-                        ? 'bg-brand-600 text-white shadow-sm shadow-brand-600/30 font-semibold'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4 shrink-0" />
-                    <span className="truncate">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Accounting Configuration Group */}
-            <div className="space-y-1 pt-2 border-t border-slate-800/80">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 px-3 mb-2">
-                Accounting Configuration
-              </div>
-              {rulesNavItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setActiveTab(item.id)}
-                    className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium transition ${
-                      isActive
-                        ? 'bg-brand-600 text-white shadow-sm shadow-brand-600/30 font-semibold'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4 shrink-0" />
-                    <span className="truncate">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Administration Group (Role-Guarded) */}
-            {isAdmin && (
-              <div className="space-y-1 pt-2 border-t border-slate-800/80">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 px-3 mb-2">
-                  Administration
-                </div>
-                {adminNavItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeTab === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => setActiveTab(item.id)}
-                      className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium transition ${
-                        isActive
-                          ? 'bg-brand-600 text-white shadow-sm shadow-brand-600/30 font-semibold'
-                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4 shrink-0" />
-                      <span className="truncate">{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Sidebar Footer: Active Workspace Badge */}
-          <div className="p-3 bg-slate-900 border border-slate-800 rounded-lg text-xs">
-            <div className="text-slate-400 font-medium mb-1">Active Organization</div>
-            <div className="text-[11px] text-brand-300 font-mono font-semibold flex items-center space-x-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-brand-400"></span>
-              <span>{currentWorkspace?.tenant_code}</span>
-            </div>
-            <div className="text-[10px] text-slate-500 mt-1 capitalize">
-              {typeBadge.label} Environment
-            </div>
-          </div>
-        </aside>
-
-        {/* Content View */}
-        <main className="flex-1 p-8 overflow-y-auto max-w-7xl">
+      <main className="main-content" id="main-content">
           {activeTab === 'dashboard' && <TenantDashboardPage onNavigateTab={setActiveTab} />}
-          {activeTab === 'gl' && <GLWorkspacePage />}
-          {activeTab === 'billing_ar' && <BillingWorkspacePage />}
-          {activeTab === 'commissions_fiduciary' && <CommissionsWorkspacePage />}
-          {activeTab === 'treasury_bank_rec' && <TreasuryWorkspacePage />}
-          {activeTab === 'finance_close' && <FinanceCloseWorkspacePage />}
+          {activeTab === 'gl' && <GLWorkspacePage section={glSection} onNavigateTab={setActiveTab} />}
+          {activeTab === 'billing_ar' && <BillingWorkspacePage section={billSection} onSectionChange={setBillSection} />}
+          {activeTab === 'commissions_fiduciary' && <CommissionsWorkspacePage section={commSection} />}
+          {activeTab === 'treasury_bank_rec' && <TreasuryWorkspacePage section={treasSection} onSectionChange={setTreasSection} />}
+          {activeTab === 'finance_close' && <FinanceCloseWorkspacePage section={closeSection} />}
           {activeTab === 'counterparties' && <CounterpartiesPage />}
           {activeTab === 'event_definitions' && <EventDefinitionsPage />}
           {activeTab === 'posting_rules' && <PostingRulesPage />}
@@ -342,8 +305,7 @@ export default function App() {
           {activeTab === 'users' && <UserManagementPage />}
           {activeTab === 'settings' && <OrganizationSettingsPage />}
           {activeTab === 'modules' && <ModuleConfigPage />}
-        </main>
-      </div>
-    </div>
+      </main>
+    </>
   );
 }

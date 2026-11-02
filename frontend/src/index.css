@@ -1,3 +1,7 @@
+@import './styles/vdx-global.css';
+@import './styles/veridex-ui.css';
+@import './styles/veridex-pages.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -9,6 +13,12 @@
 
 code, pre {
   font-family: 'JetBrains Mono', monospace;
+}
+
+/* Ensure dark mode select options always have solid dark background and bright text */
+select option {
+  background-color: #1e293b;
+  color: #f8fafc;
 }
 
 /* =====================================================================
@@ -33,20 +43,21 @@ code, pre {
   --color-slate-950: 11 15 25;
 }
 
-/* Custom scrollbars - Dark */
+/* Custom scrollbars: thin, transparent track, low-contrast thumb (both themes) */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
-::-webkit-scrollbar-track {
-  background: #0f172a;
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.22);
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: rgba(148, 163, 184, 0.45);
 }
 
 /* =====================================================================
@@ -72,15 +83,11 @@ code, pre {
 }
 
 /* Custom scrollbars - Light */
-.light ::-webkit-scrollbar-track {
-  background: #f1f5f9;
-}
 .light ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 3px;
+  background: rgba(100, 116, 139, 0.28);
 }
 .light ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: rgba(100, 116, 139, 0.5);
 }
 
 /* Primary text inversion for Light mode */
@@ -112,8 +119,9 @@ html.light a.bg-brand-600 * {
 .light .text-emerald-400 {
   color: #059669; /* Emerald-600 for sharp readability on white */
 }
-.light .text-brand-400 {
-  color: #059669;
+.light .text-brand-400,
+.light .text-brand-300 {
+  color: #d95606; /* VeriDex orange-600 */
 }
 .light .text-amber-400 {
   color: #d97706; /* Amber-600 */
@@ -142,7 +150,7 @@ html.light a.bg-brand-600 * {
 .light input:focus,
 .light select:focus,
 .light textarea:focus {
-  border-color: #10b981 !important;
+  border-color: #f86407 !important;
   background-color: #ffffff !important;
 }
 .light input::placeholder,
@@ -162,4 +170,143 @@ html.light a.bg-brand-600 * {
 /* Subtle card elevation in Light mode */
 .light .bg-slate-900 {
   box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+}
+
+/* =====================================================================
+   VERIDEX SHELL × THEME BRIDGE
+   The shell (sidebar + header) is navy in both themes; only the page
+   canvas follows the day/night toggle.
+   ===================================================================== */
+body {
+  background-color: rgb(var(--color-slate-950));
+  color: rgb(var(--color-slate-100));
+}
+.main-content {
+  background-color: rgb(var(--color-slate-950));
+  padding: 24px 28px;
+}
+.light body,
+html.light body {
+  background-color: var(--color-surface);
+}
+html.light .main-content {
+  background-color: var(--color-surface);
+}
+select option {
+  background-color: rgb(var(--color-slate-900));
+  color: rgb(var(--color-slate-100));
+}
+
+/* The header is a navy zone in both themes: pin the slate channels inside it
+   to the dark palette so embedded Tailwind widgets (company selector, etc.)
+   stay legible, and keep the light-theme input override off the search box. */
+.app-header {
+  --color-slate-900: 15 23 42;
+  --color-slate-850: 21 30 46;
+  --color-slate-800: 36 49 68;
+  --color-slate-750: 46 63 87;
+  --color-slate-700: 59 80 110;
+  --color-slate-500: 143 161 182;
+  --color-slate-400: 184 197 212;
+  --color-slate-300: 220 227 236;
+  --color-slate-200: 238 242 246;
+  --color-slate-100: 255 255 255;
+}
+html.light .app-header .header-search input[type="text"],
+html.light .app-header .header-search input[type="text"]:focus {
+  background-color: transparent !important;
+  border: none !important;
+  color: #ffffff !important;
+}
+html.light .app-header .text-white { color: #ffffff !important; }
+html.light .app-header .text-brand-400 { color: var(--vdx-primitive-orange-400); }
+
+/* Sidebar focus ring: keep it inside the item so it doesn't read as a double border after a click */
+.sidebar .nav-item:focus:not(:focus-visible) { outline: none; }
+.sidebar .nav-item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+/* Scroll inside the content area (below the fixed header) instead of the whole window,
+   so the page scrollbar never runs up alongside the header. Auth screens have no shell
+   and keep normal window scrolling. */
+body:has(.main-content) { overflow: hidden; }
+.main-content {
+  height: calc(100vh - var(--header-height));
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Page modals use Tailwind's z-50; the fixed sidebar/header sit at z-200, so lift
+   full-screen overlays above the shell so the backdrop dims the whole window. */
+.main-content .fixed.inset-0 { z-index: var(--z-modal); }
+
+/* Modal backdrops are often rendered inside `space-y-*` containers, whose sibling margin
+   would push the fixed overlay down and leave a strip of the header un-dimmed. */
+.main-content .fixed.inset-0 { margin: 0 !important; }
+
+/* Same dark frosted backdrop for every modal variant (/80 is covered above; /85 and black/75 were not) */
+.light .fixed.inset-0.bg-slate-950\/85,
+.light .fixed.inset-0.bg-black\/75 {
+  background-color: rgba(15, 23, 42, 0.5) !important;
+}
+.main-content .fixed.inset-0.backdrop-blur-md { backdrop-filter: blur(4px); }
+
+/* Horizontal table scrollers: same thin, quiet style as the page scrollbar */
+.table-responsive::-webkit-scrollbar,
+.table-wrap::-webkit-scrollbar {
+  height: 4px;
+}
+.table-responsive::-webkit-scrollbar-track,
+.table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+.table-responsive::-webkit-scrollbar-thumb,
+.table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.22);
+}
+.light .table-responsive::-webkit-scrollbar-thumb,
+.light .table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.28);
+}
+.table-responsive::-webkit-scrollbar-thumb:hover,
+.table-wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45);
+}
+
+/* The design system sets `padding: 0 12px` on every text input, which out-ranks Tailwind's
+   padding utilities. Restore the ones used for inputs with a leading icon or trailing button. */
+input[type].pl-8  { padding-left: 2rem; }
+input[type].pl-9  { padding-left: 2.25rem; }
+input[type].pl-10 { padding-left: 2.5rem; }
+input[type].pr-10 { padding-right: 2.5rem; }
+
+/* =====================================================================
+   DARK-TINT UTILITY REMAP
+   Pages were authored with dark-theme tints (e.g. bg-rose-950/40, border-emerald-800/60).
+   Over the light canvas those blend into muddy pink/green/blue, so map them to the
+   matching light tints. The base-background rules skip :hover so hover utilities still win.
+   ===================================================================== */
+/* rose / danger */
+.light .bg-rose-950\/40:not(:hover),
+.light .bg-rose-950\/60:not(:hover) { background-color: #fff1f2; }
+.light .hover\:bg-rose-950\/40:hover,
+.light .hover\:bg-rose-950\/60:hover { background-color: #ffe4e6; }
+.light .hover\:bg-rose-900:hover { background-color: #ffe4e6; }
+.light .border-rose-800\/40,
+.light .hover\:border-rose-800:hover { border-color: #fecdd3; }
+.light .text-rose-300,
+.light .hover\:text-rose-300:hover { color: #be123c; }
+
+/* emerald / success */
+.light .bg-emerald-950\/30:not(:hover),
+.light .bg-emerald-950\/40:not(:hover),
+.light .bg-emerald-950\/60:not(:hover) { background-color: #ecfdf5; }
+.light .border-emerald-800\/60 { border-color: #a7f3d0; }
+
+/* blue / info */
+.light .bg-blue-950\/40:not(:hover) { background-color: #eff6ff; }
+.light .border-blue-800\/60 { border-color: #bfdbfe; }
+
+/* purple gradient banner */
+.light .from-purple-950\/40 {
+  --tw-gradient-from: #faf5ff var(--tw-gradient-from-position);
 }

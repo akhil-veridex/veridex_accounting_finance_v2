@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Eye
 } from 'lucide-react';
+import ModalClose from '../components/ModalClose';
 
 export default function EventDefinitionsPage() {
   const [events, setEvents] = useState([]);
@@ -326,7 +327,7 @@ export default function EventDefinitionsPage() {
       {/* Modal: New Event Definition */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h2 className="text-sm font-bold text-white flex items-center space-x-2">
                 <FileCode className="w-4 h-4 text-brand-400" />
@@ -441,6 +442,7 @@ export default function EventDefinitionsPage() {
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowCreateModal(false)} />
           </div>
         </div>
       )}

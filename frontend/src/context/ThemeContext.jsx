@@ -1,48 +1,24 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect } from 'react';
 
 const ThemeContext = createContext();
 
-export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(() => {
-    try {
-      const saved = localStorage.getItem('veridex_theme');
-      if (saved === 'light' || saved === 'dark') return saved;
-      return 'dark'; // Default to classic Veridex dark mode
-    } catch {
-      return 'dark';
-    }
-  });
+// The app uses a single (light) theme; there is no day/night switch.
+const THEME = 'light';
 
+export function ThemeProvider({ children }) {
   useEffect(() => {
     const root = document.documentElement;
-    if (theme === 'light') {
-      root.classList.add('light');
-      root.classList.remove('dark');
-    } else {
-      root.classList.add('dark');
-      root.classList.remove('light');
-    }
+    root.classList.add('light');
+    root.classList.remove('dark');
     try {
-      localStorage.setItem('veridex_theme', theme);
+      localStorage.removeItem('veridex_theme');
     } catch {
       // Ignore local storage error
     }
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
-  };
+  }, []);
 
   return (
-    <ThemeContext.Provider
-      value={{
-        theme,
-        setTheme,
-        toggleTheme,
-        isDark: theme === 'dark',
-        isLight: theme === 'light'
-      }}
-    >
+    <ThemeContext.Provider value={{ theme: THEME, isDark: false, isLight: true }}>
       {children}
     </ThemeContext.Provider>
   );

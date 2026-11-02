@@ -18,9 +18,14 @@ import {
   XCircle,
   FileSpreadsheet
 } from 'lucide-react';
+import ModalClose from '../components/ModalClose';
 
-export default function TreasuryWorkspacePage() {
-  const [subtab, setSubtab] = useState('overview'); // 'overview' | 'reconciliation' | 'statements' | 'processors' | 'mandates' | 'attempts' | 'returns' | 'refunds' | 'dunning'
+export default function TreasuryWorkspacePage({ section, onSectionChange }) {
+  // `section` is driven by the sidebar; without it the page shows its own tab bar.
+  const [subtab, setSubtab] = useState(section || 'overview'); // 'overview' | 'reconciliation' | 'statements' | 'processors' | 'mandates' | 'attempts' | 'returns' | 'refunds' | 'dunning'
+  useEffect(() => { if (section) { setSubtab(section); setSuccess(null); setError(null); } }, [section]);
+  // Keep the sidebar highlight in step when the page itself jumps to another section
+  useEffect(() => { if (section && subtab !== section) onSectionChange?.(subtab); }, [subtab]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -267,7 +272,7 @@ export default function TreasuryWorkspacePage() {
       )}
 
       {/* Navigation Subtabs */}
-      <div className="flex border-b border-slate-800 space-x-1 overflow-x-auto">
+      <div className={`flex border-b border-slate-800 space-x-1 overflow-x-auto ${section ? 'hidden' : ''}`}>
         {[
           { id: 'overview', label: 'Treasury Overview', icon: Landmark },
           { id: 'reconciliation', label: '2-Pane Bank Reconciliation', icon: FileCheck },
@@ -370,7 +375,7 @@ export default function TreasuryWorkspacePage() {
               <button
                 onClick={handleAutoReconcile}
                 disabled={loading}
-                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center space-x-1.5 transition"
+                className="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded text-xs font-semibold flex items-center space-x-1.5 transition"
               >
                 <Check className="w-3.5 h-3.5" />
                 <span>Run Auto-Reconcile</span>
@@ -516,6 +521,13 @@ export default function TreasuryWorkspacePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
+                {bankLines.length === 0 && (
+                  <tr>
+                    <td colSpan="6" className="py-4 text-center text-slate-500 font-sans">
+                      No bank statement lines imported yet. Click "Import Statement" above.
+                    </td>
+                  </tr>
+                )}
                 {bankLines.map((bl) => (
                   <tr key={bl._id} className="hover:bg-slate-850/50">
                     <td className="p-3 text-slate-400">{bl.import_batch_id}</td>
@@ -549,7 +561,7 @@ export default function TreasuryWorkspacePage() {
             </div>
             <button
               onClick={() => setShowReturnModal(true)}
-              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs font-semibold flex items-center space-x-1.5 transition"
+              className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded text-xs font-semibold flex items-center space-x-1.5 transition"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Record NSF Return</span>
@@ -689,7 +701,7 @@ export default function TreasuryWorkspacePage() {
       {/* MODAL: Import Bank Statement */}
       {showImportModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 max-w-lg w-full space-y-4">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-lg p-6 max-w-lg w-full space-y-4">
             <h3 className="text-base font-bold text-white">Import Bank Statement Feed</h3>
             <form onSubmit={handleImportStatement} className="space-y-3 text-xs">
               <div>
@@ -738,6 +750,7 @@ export default function TreasuryWorkspacePage() {
                 <button type="submit" className="px-4 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded font-semibold">Import Feed</button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowImportModal(false)} />
           </div>
         </div>
       )}
@@ -745,7 +758,7 @@ export default function TreasuryWorkspacePage() {
       {/* MODAL: Manual Match */}
       {showManualMatchModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 max-w-md w-full space-y-4">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-lg p-6 max-w-md w-full space-y-4">
             <h3 className="text-base font-bold text-white">Manual Reconciliation Match</h3>
             <form onSubmit={handleManualMatch} className="space-y-3 text-xs">
               <div>
@@ -788,9 +801,10 @@ export default function TreasuryWorkspacePage() {
               </div>
               <div className="flex justify-end space-x-2 pt-3 border-t border-slate-800">
                 <button type="button" onClick={() => setShowManualMatchModal(false)} className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded">Cancel</button>
-                <button type="submit" className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-semibold">Confirm Match</button>
+                <button type="submit" className="px-4 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded font-semibold">Confirm Match</button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowManualMatchModal(false)} />
           </div>
         </div>
       )}

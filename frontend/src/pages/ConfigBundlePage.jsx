@@ -229,7 +229,7 @@ export default function ConfigBundlePage() {
               <button
                 onClick={handleImport}
                 disabled={importing || importSuccess !== null}
-                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold transition flex items-center justify-center space-x-2 shadow-md shadow-emerald-500/20"
+                className="w-full py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-semibold transition flex items-center justify-center space-x-2 shadow-md shadow-brand-500/20"
               >
                 {importing ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />

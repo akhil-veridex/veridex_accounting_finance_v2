@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
-import { Building2, Check, ArrowRight, Shield, Globe, Sun, Moon } from 'lucide-react';
+import { Building2, Check, ArrowRight, Shield, Globe } from 'lucide-react';
 
 export default function WorkspaceSelectPage({ onProceed }) {
   const { currentWorkspace, availableWorkspaces, switchWorkspace } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const [selectedId, setSelectedId] = useState(currentWorkspace ? currentWorkspace.id : (availableWorkspaces[0]?.id || ''));
   const [switching, setSwitching] = useState(false);
 
@@ -24,26 +22,6 @@ export default function WorkspaceSelectPage({ onProceed }) {
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 relative">
-      <div className="absolute top-5 right-5">
-        <button
-          type="button"
-          onClick={toggleTheme}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-medium text-slate-300 hover:text-white transition shadow"
-          title={theme === 'dark' ? 'Switch to Day Mode' : 'Switch to Night Mode'}
-        >
-          {theme === 'dark' ? (
-            <>
-              <Sun className="w-4 h-4 text-amber-400" />
-              <span>Day Mode</span>
-            </>
-          ) : (
-            <>
-              <Moon className="w-4 h-4 text-indigo-500" />
-              <span>Night Mode</span>
-            </>
-          )}
-        </button>
-      </div>
       <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl">
         <div className="flex items-center space-x-3 mb-6">
           <div className="h-10 w-10 bg-brand-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-brand-500/20">

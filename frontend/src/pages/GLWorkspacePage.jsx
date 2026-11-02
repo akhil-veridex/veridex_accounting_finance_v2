@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { authApi } from '../services/api';
+import ManualJournalModal from '../components/ManualJournalModal';
 import {
   BookOpen,
   PlusCircle,
@@ -19,10 +20,13 @@ import {
   Eye,
   X
 } from 'lucide-react';
+import ModalClose from '../components/ModalClose';
 
-export default function GLWorkspacePage() {
+export default function GLWorkspacePage({ section, onNavigateTab }) {
   const { currentWorkspace } = useAuth();
-  const [activeTab, setActiveTab] = useState('journals'); // 'journals' | 'coa' | 'trial_balance' | 'periods' | 'rules' | 'fx'
+  // `section` is driven by the sidebar; without it the page shows its own tab bar.
+  const [activeTab, setActiveTab] = useState(section || 'journals'); // 'journals' | 'coa' | 'trial_balance' | 'periods' | 'rules' | 'fx'
+  useEffect(() => { if (section) setActiveTab(section); }, [section]);
 
   // Data states
   const [accounts, setAccounts] = useState([]);
@@ -46,18 +50,6 @@ export default function GLWorkspacePage() {
 
   // New Journal Modal with Live Preview
   const [showNewJournalModal, setShowNewJournalModal] = useState(false);
-  const [newJournalForm, setNewJournalForm] = useState({
-    posting_date: new Date().toISOString().slice(0, 10),
-    memo: '',
-    source_module: 'GL_MANUAL',
-    reference_id: '',
-    lines: [
-      { account_code: '1000', debit: '', credit: '', memo: '' },
-      { account_code: '3000', debit: '', credit: '', memo: '' }
-    ]
-  });
-  const [journalPreview, setJournalPreview] = useState(null);
-  const [submittingJournal, setSubmittingJournal] = useState(false);
 
   // New Account Modal
   const [showNewAccountModal, setShowNewAccountModal] = useState(false);
@@ -156,78 +148,6 @@ export default function GLWorkspacePage() {
       setLoading(false);
     }
   }
-
-  // Handle New Journal Line Change and Update Live Preview
-  const handleLineChange = (index, field, value) => {
-    const updated = [...newJournalForm.lines];
-    updated[index][field] = value;
-    setNewJournalForm({ ...newJournalForm, lines: updated });
-
-    // Calculate totals
-    let dr = 0;
-    let cr = 0;
-    for (const l of updated) {
-      dr += parseFloat(l.debit || 0);
-      cr += parseFloat(l.credit || 0);
-    }
-    setJournalPreview({
-      total_debit: dr.toFixed(2),
-      total_credit: cr.toFixed(2),
-      difference: (dr - cr).toFixed(2),
-      is_balanced: Math.abs(dr - cr) < 0.0001 && dr > 0
-    });
-  };
-
-  const addJournalLine = () => {
-    setNewJournalForm({
-      ...newJournalForm,
-      lines: [...newJournalForm.lines, { account_code: '1100', debit: '', credit: '', memo: '' }]
-    });
-  };
-
-  const removeJournalLine = (index) => {
-    if (newJournalForm.lines.length <= 2) return;
-    const updated = newJournalForm.lines.filter((_, idx) => idx !== index);
-    setNewJournalForm({ ...newJournalForm, lines: updated });
-  };
-
-  const handlePostJournal = async (e) => {
-    e.preventDefault();
-    setSubmittingJournal(true);
-    setErrorMsg(null);
-    try {
-      const payload = {
-        ...newJournalForm,
-        lines: newJournalForm.lines.map(l => ({
-          account_code: l.account_code,
-          debit: l.debit || '0.00',
-          credit: l.credit || '0.00',
-          memo: l.memo
-        }))
-      };
-      const res = await authApi.postJournal(payload);
-      if (res.success) {
-        setSuccessMsg(`Journal ${res.data.journal.journal_number} posted successfully!`);
-        setShowNewJournalModal(false);
-        setNewJournalForm({
-          posting_date: new Date().toISOString().slice(0, 10),
-          memo: '',
-          source_module: 'GL_MANUAL',
-          reference_id: '',
-          lines: [
-            { account_code: '1000', debit: '', credit: '', memo: '' },
-            { account_code: '3000', debit: '', credit: '', memo: '' }
-          ]
-        });
-        setJournalPreview(null);
-        await loadData();
-      }
-    } catch (err) {
-      setErrorMsg(err.message);
-    } finally {
-      setSubmittingJournal(false);
-    }
-  };
 
   // Inspect Journal Details
   const handleInspectJournal = async (journal) => {
@@ -387,7 +307,7 @@ export default function GLWorkspacePage() {
           )}
           {activeTab === 'rules' && (
             <button
-              onClick={() => setShowNewRuleModal(true)}
+              onClick={() => (onNavigateTab ? onNavigateTab('posting_rules') : setShowNewRuleModal(true))}
               className="py-2 px-3.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-brand-600/20 transition"
             >
               <PlusCircle className="w-4 h-4" />
@@ -403,13 +323,15 @@ export default function GLWorkspacePage() {
               <span>Record FX Rate</span>
             </button>
           )}
-          <button
-            onClick={() => setShowNewJournalModal(true)}
-            className="py-2 px-3.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-brand-600/20 transition"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>Post Manual Journal</span>
-          </button>
+          {activeTab !== 'rules' && activeTab !== 'fx' && (
+            <button
+              onClick={() => setShowNewJournalModal(true)}
+              className="py-2 px-3.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-brand-600/20 transition"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Post Manual Journal</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -428,7 +350,7 @@ export default function GLWorkspacePage() {
       )}
 
       {/* Subtab Navigation */}
-      <div className="flex border-b border-slate-800 space-x-2 overflow-x-auto">
+      <div className={`flex border-b border-slate-800 space-x-2 overflow-x-auto ${section ? 'hidden' : ''}`}>
         <button
           onClick={() => setActiveTab('journals')}
           className={`pb-2.5 px-3 text-xs font-semibold transition border-b-2 flex items-center space-x-1.5 shrink-0 ${
@@ -631,6 +553,13 @@ export default function GLWorkspacePage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 text-slate-300">
+                  {!loading && trialBalance && trialBalance.accounts.length === 0 && (
+                    <tr>
+                      <td colSpan="7" className="py-8 text-center text-slate-500 font-sans">
+                        No ledger accounts found. Add accounts in Chart of Accounts.
+                      </td>
+                    </tr>
+                  )}
                   {loading || !trialBalance ? (
                     <tr>
                       <td colSpan="7" className="py-8 text-center text-slate-500">Computing trial balance...</td>
@@ -678,9 +607,9 @@ export default function GLWorkspacePage() {
                                 e.stopPropagation();
                                 openAccountDrilldown(a);
                               }}
-                              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-brand-600 hover:text-white text-slate-300 font-medium text-[11px] inline-flex items-center space-x-1.5 transition border border-slate-700"
+                              className="group/btn px-2.5 py-1 rounded bg-slate-800 hover:bg-brand-600 hover:text-white text-slate-300 font-medium text-[11px] inline-flex items-center space-x-1.5 transition border border-slate-700"
                             >
-                              <FileText className="w-3 h-3 text-brand-400 group-hover:text-white" />
+                              <FileText className="w-3 h-3 text-brand-400 group-hover/btn:text-white" />
                               <span>View Ledger</span>
                             </button>
                           </td>
@@ -716,6 +645,13 @@ export default function GLWorkspacePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800 text-slate-300">
+                {!loading && accounts.length === 0 && (
+                  <tr>
+                    <td colSpan="8" className="py-8 text-center text-slate-500 font-sans">
+                      No ledger accounts found. Click "Add Account" above.
+                    </td>
+                  </tr>
+                )}
                 {loading ? (
                   <tr>
                     <td colSpan="8" className="py-8 text-center text-slate-500">Loading accounts...</td>
@@ -760,9 +696,9 @@ export default function GLWorkspacePage() {
                             e.stopPropagation();
                             openAccountDrilldown(a);
                           }}
-                          className="px-2.5 py-1 rounded bg-slate-800 hover:bg-brand-600 hover:text-white text-slate-300 font-medium text-[11px] inline-flex items-center space-x-1.5 transition border border-slate-700"
+                          className="group/btn px-2.5 py-1 rounded bg-slate-800 hover:bg-brand-600 hover:text-white text-slate-300 font-medium text-[11px] inline-flex items-center space-x-1.5 transition border border-slate-700"
                         >
-                          <FileText className="w-3 h-3 text-brand-400 group-hover:text-white" />
+                          <FileText className="w-3 h-3 text-brand-400 group-hover/btn:text-white" />
                           <span>View Ledger</span>
                         </button>
                       </td>
@@ -793,6 +729,13 @@ export default function GLWorkspacePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800 text-slate-300">
+                {!loading && periods.length === 0 && (
+                  <tr>
+                    <td colSpan="5" className="py-8 text-center text-slate-500 font-sans">
+                      No fiscal periods found for this workspace.
+                    </td>
+                  </tr>
+                )}
                 {loading ? (
                   <tr>
                     <td colSpan="5" className="py-8 text-center text-slate-500">Loading periods...</td>
@@ -821,10 +764,10 @@ export default function GLWorkspacePage() {
                         <td className="py-3.5 px-5 text-right">
                           <button
                             onClick={() => handleTogglePeriodLock(p._id, p.status)}
-                            className={`py-1 px-2.5 rounded text-[11px] font-semibold flex items-center space-x-1 ml-auto transition ${
+                            className={`py-1.5 px-3 rounded-md text-[11px] font-semibold flex items-center space-x-1.5 ml-auto whitespace-nowrap border transition ${
                               isLocked
-                                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200'
-                                : 'bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40'
+                                ? 'bg-slate-800 hover:bg-slate-750 text-slate-200 border-slate-700'
+                                : 'bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 border-rose-200 hover:border-rose-300'
                             }`}
                           >
                             {isLocked ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
@@ -1007,6 +950,13 @@ export default function GLWorkspacePage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 text-slate-300">
+                  {!loadingJournalLines && journalLines.length === 0 && (
+                    <tr>
+                      <td colSpan="5" className="py-6 text-center text-slate-500 font-sans">
+                        No journal lines found for this journal.
+                      </td>
+                    </tr>
+                  )}
                   {loadingJournalLines ? (
                     <tr>
                       <td colSpan="5" className="py-6 text-center text-slate-500">Loading journal lines...</td>
@@ -1061,181 +1011,19 @@ export default function GLWorkspacePage() {
         </div>
       )}
 
-      {/* Modal: New Journal */}
-      {showNewJournalModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl">
-            <h3 className="text-base font-bold text-white mb-1">Post Balanced Double-Entry Journal</h3>
-            <p className="text-xs text-slate-400 mb-4">
-              All debits must equal credits. Backdated posting is prohibited in locked or hard-closed accounting periods.
-            </p>
-
-            <form onSubmit={handlePostJournal} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Posting Date</label>
-                  <input
-                    type="date"
-                    required
-                    value={newJournalForm.posting_date}
-                    onChange={(e) => setNewJournalForm({ ...newJournalForm, posting_date: e.target.value })}
-                    className="w-full px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Source Module</label>
-                  <select
-                    value={newJournalForm.source_module}
-                    onChange={(e) => setNewJournalForm({ ...newJournalForm, source_module: e.target.value })}
-                    className="w-full px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  >
-                    <option value="GL_MANUAL">GL_MANUAL (Manual Journal)</option>
-                    <option value="POLICY_BIND">POLICY_BIND (Policy Gross AR & UPR)</option>
-                    <option value="BILLING_AR">BILLING_AR (Billing Clearance)</option>
-                    <option value="TREASURY_BANK_REC">TREASURY_BANK_REC (Cash Receipt)</option>
-                    <option value="FINANCE_CLOSE">FINANCE_CLOSE (UPR Recognition)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Reference ID</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. POL-TX-8821"
-                    value={newJournalForm.reference_id}
-                    onChange={(e) => setNewJournalForm({ ...newJournalForm, reference_id: e.target.value })}
-                    className="w-full px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Memo / Description</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Initial Policy Gross Premium & UPR Reserve"
-                  value={newJournalForm.memo}
-                  onChange={(e) => setNewJournalForm({ ...newJournalForm, memo: e.target.value })}
-                  className="w-full px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
-
-              {/* Lines Table */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-semibold text-slate-300">Journal Lines (Debits & Credits)</span>
-                  <button
-                    type="button"
-                    onClick={addJournalLine}
-                    className="text-xs text-brand-400 hover:text-brand-300 font-medium"
-                  >
-                    + Add Line
-                  </button>
-                </div>
-
-                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                  {newJournalForm.lines.map((line, idx) => (
-                    <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-slate-850 p-2 rounded-lg border border-slate-800">
-                      <div className="col-span-4">
-                        <select
-                          required
-                          value={line.account_code}
-                          onChange={(e) => handleLineChange(idx, 'account_code', e.target.value)}
-                          className="w-full px-2 py-1 bg-slate-800 border border-slate-700 rounded text-xs text-white font-mono focus:border-brand-500 focus:outline-none"
-                        >
-                          <option value="">Select Account...</option>
-                          {accounts.map((acc) => (
-                            <option key={acc._id || acc.account_code} value={acc.account_code}>
-                              {acc.account_code} - {acc.account_name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="col-span-2">
-                        <input
-                          type="number"
-                          step="0.01"
-                          placeholder="Debit ($)"
-                          value={line.debit}
-                          onChange={(e) => handleLineChange(idx, 'debit', e.target.value)}
-                          className="w-full px-2 py-1 bg-slate-800 border border-slate-700 rounded text-xs text-emerald-400 font-mono"
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <input
-                          type="number"
-                          step="0.01"
-                          placeholder="Credit ($)"
-                          value={line.credit}
-                          onChange={(e) => handleLineChange(idx, 'credit', e.target.value)}
-                          className="w-full px-2 py-1 bg-slate-800 border border-slate-700 rounded text-xs text-emerald-400 font-mono"
-                        />
-                      </div>
-                      <div className="col-span-3">
-                        <input
-                          type="text"
-                          placeholder="Line memo"
-                          value={line.memo}
-                          onChange={(e) => handleLineChange(idx, 'memo', e.target.value)}
-                          className="w-full px-2 py-1 bg-slate-800 border border-slate-700 rounded text-xs text-slate-300"
-                        />
-                      </div>
-                      <div className="col-span-1 text-center">
-                        <button
-                          type="button"
-                          onClick={() => removeJournalLine(idx)}
-                          disabled={newJournalForm.lines.length <= 2}
-                          className="text-slate-500 hover:text-rose-400 text-xs disabled:opacity-30 cursor-pointer"
-                          title={newJournalForm.lines.length <= 2 ? 'Minimum 2 lines required' : 'Delete line'}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Live Preview Box */}
-              {journalPreview && (
-                <div className="p-3 rounded-lg bg-slate-850 border border-slate-800 flex justify-between items-center text-xs font-mono">
-                  <div>
-                    <span className="text-slate-400">Total Dr: </span>
-                    <span className="text-white font-bold">${journalPreview.total_debit}</span>
-                    <span className="text-slate-400 ml-4">Total Cr: </span>
-                    <span className="text-white font-bold">${journalPreview.total_credit}</span>
-                  </div>
-                  <div className={journalPreview.is_balanced ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                    {journalPreview.is_balanced ? '✓ Balanced (Equilibrium)' : `Imbalance: $${journalPreview.difference}`}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end space-x-2 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowNewJournalModal(false)}
-                  className="px-3.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingJournal || (journalPreview && !journalPreview.is_balanced)}
-                  className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-brand-600 hover:bg-brand-500 transition disabled:opacity-50"
-                >
-                  {submittingJournal ? 'Posting...' : 'Post Journal'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ManualJournalModal
+        open={showNewJournalModal}
+        onClose={() => setShowNewJournalModal(false)}
+        onPosted={(msg) => {
+          setSuccessMsg(msg);
+          return loadData();
+        }}
+      />
 
       {/* Modal: New Account */}
       {showNewAccountModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl">
+          <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl">
             <h3 className="text-base font-bold text-white mb-1">Add Chart of Accounts (COA) Account</h3>
             <p className="text-xs text-slate-400 mb-4">
               Add a custom ledger account to this tenant workspace.
@@ -1324,6 +1112,7 @@ export default function GLWorkspacePage() {
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowNewAccountModal(false)} />
           </div>
         </div>
       )}
@@ -1331,7 +1120,7 @@ export default function GLWorkspacePage() {
       {/* Modal: New FX Rate */}
       {showNewFxModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl">
+          <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl">
             <h3 className="text-base font-bold text-white mb-1">Record Multi-Currency Exchange Rate</h3>
             <p className="text-xs text-slate-400 mb-4">
               Enter daily or monthly effective currency conversion factor.
@@ -1401,6 +1190,7 @@ export default function GLWorkspacePage() {
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowNewFxModal(false)} />
           </div>
         </div>
       )}
@@ -1477,6 +1267,13 @@ export default function GLWorkspacePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800 font-mono text-[11px]">
+                    {drilldownActivity.length === 0 && (
+                      <tr>
+                        <td colSpan="6" className="py-6 text-center text-slate-500 font-sans">
+                          No ledger activity has been posted to this account yet.
+                        </td>
+                      </tr>
+                    )}
                     {drilldownActivity.map((line) => {
                       const drVal = parseFloat(line.debit?.$numberDecimal || line.debit || 0);
                       const crVal = parseFloat(line.credit?.$numberDecimal || line.credit || 0);

@@ -21,6 +21,7 @@ import {
   Copy,
   RotateCcw
 } from 'lucide-react';
+import ModalClose from '../components/ModalClose';
 
 export default function PostingRulesPage() {
   const [rules, setRules] = useState([]);
@@ -731,7 +732,7 @@ export default function PostingRulesPage() {
                     <button
                       onClick={(e) => handleReactivateRule(selectedRule._id, e)}
                       disabled={actionLoading}
-                      className="py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition flex items-center justify-center space-x-1.5 shadow-md shadow-emerald-500/20"
+                      className="py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-semibold transition flex items-center justify-center space-x-1.5 shadow-md shadow-brand-500/20"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       <span>Reactivate / Publish</span>
@@ -766,7 +767,7 @@ export default function PostingRulesPage() {
       {/* Modal: New Posting Rule */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h2 className="text-sm font-bold text-white flex items-center space-x-2">
                 <Sliders className="w-4 h-4 text-brand-400" />
@@ -958,6 +959,7 @@ export default function PostingRulesPage() {
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowCreateModal(false)} />
           </div>
         </div>
       )}
@@ -965,7 +967,7 @@ export default function PostingRulesPage() {
       {/* Modal: Edit Posting Rule */}
       {showEditModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h2 className="text-sm font-bold text-white flex items-center space-x-2">
                 <Sliders className="w-4 h-4 text-amber-400" />
@@ -1229,6 +1231,7 @@ export default function PostingRulesPage() {
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowEditModal(false)} />
           </div>
         </div>
       )}

@@ -20,8 +20,9 @@ import {
 } from 'lucide-react';
 import { commissionsApi, rulesApi, dimensionsApi, billingApi } from '../services/api';
 
-export default function CommissionsWorkspacePage() {
-  const [activeSubtab, setActiveSubtab] = useState('overview');
+export default function CommissionsWorkspacePage({ section }) {
+  // `section` is driven by the sidebar; without it the page shows its own tab bar.
+  const [activeSubtab, setActiveSubtab] = useState(section || 'overview');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
@@ -256,6 +257,14 @@ export default function CommissionsWorkspacePage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (section) {
+      setActiveSubtab(section);
+      setError(null);
+      setSuccessMsg(null);
+    }
+  }, [section]);
 
   useEffect(() => {
     if (activeSubtab === 'overview') {
@@ -495,7 +504,7 @@ export default function CommissionsWorkspacePage() {
       )}
 
       {/* Navigation Subtabs */}
-      <div className="flex border-b border-slate-800 space-x-2 overflow-x-auto pb-1">
+      <div className={`flex border-b border-slate-800 space-x-2 overflow-x-auto pb-1 ${section ? 'hidden' : ''}`}>
         {[
           { id: 'overview', label: 'Overview & Chain', icon: FileText },
           { id: 'agreements', label: 'Agreements', icon: Building },
@@ -701,6 +710,13 @@ export default function CommissionsWorkspacePage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                  {schedules.length === 0 && (
+                    <tr>
+                      <td colSpan="7" className="py-4 text-center text-slate-500 font-sans">
+                        No commission schedules found. Click "Seed Lone Pine Canonical Chain" above.
+                      </td>
+                    </tr>
+                  )}
                   {schedules.map((sch) => (
                     <tr key={sch._id} className="hover:bg-slate-800/30">
                       <td className="py-2.5 font-bold text-brand-400">{sch.schedule_code}</td>
@@ -774,6 +790,13 @@ export default function CommissionsWorkspacePage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                  {splits.length === 0 && (
+                    <tr>
+                      <td colSpan="6" className="py-4 text-center text-slate-500 font-sans">
+                        No producer splits found. Click "Seed Lone Pine Canonical Chain" above.
+                      </td>
+                    </tr>
+                  )}
                   {splits.map((sp) => (
                     <tr key={sp._id} className="hover:bg-slate-800/30">
                       <td className="py-2.5 font-bold text-brand-400">{sp.split_code}</td>
@@ -1235,7 +1258,7 @@ export default function CommissionsWorkspacePage() {
                     <button
                       type="button"
                       onClick={handleSeedFiduciaryAccounts}
-                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold inline-flex items-center space-x-1.5 transition"
+                      className="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded text-xs font-semibold inline-flex items-center space-x-1.5 transition"
                     >
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>Initialize Texas § 4053 Accounts</span>
@@ -1472,7 +1495,7 @@ export default function CommissionsWorkspacePage() {
                     className={`w-full py-2.5 rounded text-xs font-semibold transition ${
                       publishedSweepRules.length === 0 || fiduciaryAccounts.length === 0
                         ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                        : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-500/10'
+                        : 'bg-brand-600 hover:bg-brand-500 text-white shadow-md shadow-brand-500/10'
                     }`}
                   >
                     Execute Trust-to-Operating Cash Sweep (${Number(sweepForm.amount || 0).toFixed(2)})
@@ -1768,6 +1791,13 @@ export default function CommissionsWorkspacePage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/40">
+                  {selectedRunLines.length === 0 && (
+                    <tr>
+                      <td colSpan="9" className="py-4 text-center text-slate-500 font-sans">
+                        No policy lines were compiled into this bordereau run.
+                      </td>
+                    </tr>
+                  )}
                   {selectedRunLines.map((l) => (
                     <tr key={l._id}>
                       <td className="py-2 text-slate-400">#{l.line_number}</td>
@@ -2052,6 +2082,13 @@ export default function CommissionsWorkspacePage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                  {settlementPreview.eligible_invoices.length === 0 && (
+                    <tr>
+                      <td colSpan="8" className="py-4 text-center text-slate-500 font-sans">
+                        No collected invoices are eligible for settlement for this carrier and period.
+                      </td>
+                    </tr>
+                  )}
                   {settlementPreview.eligible_invoices.map((inv, idx) => (
                     <tr key={inv.invoice_id || idx} className="hover:bg-slate-800/30">
                       <td className="py-2.5 font-bold text-brand-400">{inv.invoice_number}</td>
@@ -2130,7 +2167,7 @@ export default function CommissionsWorkspacePage() {
                               s.net_due_carrier?.$numberDecimal || s.net_due_carrier
                             )}
                             disabled={disbursingStatementId === s._id}
-                            className="flex items-center space-x-1 px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-semibold transition"
+                            className="flex items-center space-x-1 px-2.5 py-1 rounded bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-semibold transition"
                           >
                             {disbursingStatementId === s._id ? (
                               <>

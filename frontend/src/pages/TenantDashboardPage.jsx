@@ -58,8 +58,8 @@ export default function TenantDashboardPage({ onNavigateTab }) {
     <div className="space-y-6">
       {/* Workspace Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 bottom-0 opacity-10 flex items-center pr-8 pointer-events-none">
-          <Building2 className="w-48 h-48 text-brand-500" />
+        <div className="absolute right-0 bottom-0 opacity-[0.07] pr-6 pb-3 pointer-events-none hidden md:block">
+          <Building2 className="w-28 h-28 text-brand-500" strokeWidth={1.25} />
         </div>
         <div className="relative z-10 max-w-3xl">
           <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -95,16 +95,16 @@ export default function TenantDashboardPage({ onNavigateTab }) {
               <span className="text-slate-200">{user?.first_name} {user?.last_name}</span>
               <span className="text-brand-400 ml-1 font-semibold">({roles.join(', ') || 'Staff'})</span>
             </div>
-            <button
-              onClick={loadMetrics}
-              disabled={loading}
-              className="ml-auto text-xs text-brand-400 hover:text-brand-300 flex items-center space-x-1 transition font-sans font-medium"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              <span>Refresh Metrics</span>
-            </button>
           </div>
         </div>
+        <button
+          onClick={loadMetrics}
+          disabled={loading}
+          className="absolute top-4 right-4 z-20 text-xs text-brand-400 hover:text-brand-300 flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/70 transition font-sans font-medium"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          <span>Refresh Metrics</span>
+        </button>
       </div>
 
       {/* Real Financial Metrics Grid */}

@@ -284,8 +284,8 @@ export default function CounterpartiesPage() {
 
       {/* Search & Filter Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/60 p-3 rounded-lg border border-slate-800">
-        <div className="relative flex-1 w-full sm:w-auto">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
+        <div className="relative flex-1 w-full sm:w-auto sm:max-w-md">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500" />
           <input
             type="text"
             placeholder="Search by legal name, party code, or DBA..."
@@ -404,13 +404,13 @@ export default function CounterpartiesPage() {
                         {party.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
                       <button
                         onClick={() => {
                           setSelectedParty(party);
                           setShowRoleModal(true);
                         }}
-                        className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium transition border border-slate-700"
+                        className="whitespace-nowrap px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium transition border border-slate-700"
                       >
                         + Add Role
                       </button>

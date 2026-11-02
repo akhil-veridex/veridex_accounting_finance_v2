@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { eventPipelineApi } from '../services/api';
+import ModalClose from '../components/ModalClose';
 
 export default function EventOperationsPage() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -208,7 +209,7 @@ export default function EventOperationsPage() {
           <button
             onClick={handleTriggerDispatch}
             disabled={loading}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-medium text-sm transition shadow-sm disabled:opacity-50"
+            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded font-medium text-sm transition shadow-sm disabled:opacity-50"
           >
             {loading ? 'Processing...' : 'Run Dispatcher Now'}
           </button>
@@ -245,7 +246,7 @@ export default function EventOperationsPage() {
             onClick={() => { setActiveTab(tab.key); setStatusFilter(''); }}
             className={`py-2 px-4 border-b-2 transition whitespace-nowrap ${
               activeTab === tab.key
-                ? 'border-indigo-600 text-indigo-600 font-semibold'
+                ? 'border-brand-600 text-brand-600 font-semibold'
                 : 'border-transparent hover:border-gray-300 hover:text-gray-900'
             }`}
           >
@@ -376,7 +377,7 @@ export default function EventOperationsPage() {
                 ) : (
                   outbox.map(evt => (
                     <tr key={evt._id} className="hover:bg-gray-50">
-                      <td className="py-2.5 px-3 font-mono font-medium text-indigo-600">{evt.event_id}</td>
+                      <td className="py-2.5 px-3 font-mono font-medium text-brand-600">{evt.event_id}</td>
                       <td className="py-2.5 px-3">{evt.event_type}</td>
                       <td className="py-2.5 px-3">{evt.source_module} / {evt.source_entity_type} ({evt.source_entity_id})</td>
                       <td className="py-2.5 px-3">{getStatusBadge(evt.status)}</td>
@@ -461,7 +462,7 @@ export default function EventOperationsPage() {
                   inbox.map(msg => (
                     <tr key={msg._id} className="hover:bg-gray-50">
                       <td className="py-2.5 px-3 font-semibold text-gray-800">{msg.consumer_name}</td>
-                      <td className="py-2.5 px-3 font-mono text-indigo-600">{msg.event_id}</td>
+                      <td className="py-2.5 px-3 font-mono text-brand-600">{msg.event_id}</td>
                       <td className="py-2.5 px-3">{msg.event_type}</td>
                       <td className="py-2.5 px-3">{getStatusBadge(msg.status)}</td>
                       <td className="py-2.5 px-3">{msg.attempt_count} / {msg.max_attempts}</td>
@@ -515,12 +516,12 @@ export default function EventOperationsPage() {
               placeholder="Search by Event ID, Correlation ID, or Invoice/Source ID..."
               value={traceInput}
               onChange={e => setTraceInput(e.target.value)}
-              className="flex-1 border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="flex-1 border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
             <button
               type="submit"
               disabled={traceLoading}
-              className="px-4 py-2 bg-indigo-600 text-white rounded text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+              className="px-4 py-2 bg-brand-600 text-white rounded text-sm font-medium hover:bg-brand-700 disabled:opacity-50"
             >
               {traceLoading ? 'Tracing...' : 'Trace'}
             </button>
@@ -529,7 +530,7 @@ export default function EventOperationsPage() {
           {traceData && (
             <div className="space-y-4">
               <div className="bg-white p-4 rounded-lg border shadow-sm space-y-2">
-                <h3 className="font-semibold text-gray-900 text-sm">Trace Target: <span className="font-mono text-indigo-600">{traceData.identifier}</span></h3>
+                <h3 className="font-semibold text-gray-900 text-sm">Trace Target: <span className="font-mono text-brand-600">{traceData.identifier}</span></h3>
                 <div className="text-xs text-gray-500">
                   Found {traceData.outbox_events.length} outbox event(s), {traceData.inbox_messages.length} consumer message(s), and {traceData.journals.length} posted journal(s).
                 </div>
@@ -654,7 +655,7 @@ export default function EventOperationsPage() {
       {/* DETAIL MODAL */}
       {detailModal.open && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col">
+          <div className="relative bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col">
             <div className="p-4 border-b flex justify-between items-center">
               <h3 className="font-semibold text-sm text-gray-900">{detailModal.title}</h3>
               <button onClick={() => setDetailModal({ open: false, title: '', content: null })} className="text-gray-400 hover:text-gray-600 font-bold">&times;</button>
@@ -670,6 +671,7 @@ export default function EventOperationsPage() {
                 Close
               </button>
             </div>
+            <ModalClose onClick={() => setDetailModal({ open: false, title: '', content: null })} />
           </div>
         </div>
       )}
@@ -677,7 +679,7 @@ export default function EventOperationsPage() {
       {/* REPLAY AUDIT MODAL */}
       {replayModal.open && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5 space-y-4">
+          <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full p-5 space-y-4">
             <h3 className="font-semibold text-base text-gray-900">Operator Replay Authorization</h3>
             <p className="text-xs text-gray-500">
               Replaying a dead-letter item resets its failure count and re-submits it to the pipeline using its original identity. A required operator reason is audited.
@@ -689,7 +691,7 @@ export default function EventOperationsPage() {
                 value={replayModal.reason}
                 onChange={e => setReplayModal({ ...replayModal, reason: e.target.value })}
                 placeholder="Explain why this item is being replayed (e.g. underlying COA account corrected, policy updated)..."
-                className="w-full border rounded p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-full border rounded p-2 text-xs focus:outline-none focus:ring-1 focus:ring-brand-500"
               />
             </div>
             <div className="flex justify-end gap-2">
@@ -706,6 +708,7 @@ export default function EventOperationsPage() {
                 Confirm Replay
               </button>
             </div>
+            <ModalClose onClick={() => setReplayModal({ open: false, type: 'outbox', id: '', reason: '' })} />
           </div>
         </div>
       )}

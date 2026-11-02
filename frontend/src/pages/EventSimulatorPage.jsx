@@ -550,7 +550,7 @@ export default function EventSimulatorPage() {
                 className={`w-full py-2.5 rounded-lg font-semibold transition flex items-center justify-center space-x-2 ${
                   postResult
                     ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
+                    : 'bg-brand-600 hover:bg-brand-500 text-white shadow-md shadow-brand-500/20'
                 }`}
               >
                 {posting ? (

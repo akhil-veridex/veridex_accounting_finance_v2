@@ -1,0 +1,115 @@
+/* =====================================================================
+   VERIDEX PAGE SKIN
+   Gives the existing Tailwind-built ERP pages the prototype's page-header,
+   card, table, form and button treatment without touching page markup.
+   Everything is scoped to .main-content so the shell and login are unaffected.
+   ===================================================================== */
+
+/* ---- Page titles ---------------------------------------------------- */
+.main-content h1 {
+  font-size: 22px;
+  line-height: 30px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+.main-content h1 svg,
+.main-content h2 svg { color: var(--color-brand); }
+
+/* ---- Typography: mono is for codes/figures, labels use Inter --------- */
+.main-content .font-mono.uppercase,
+.main-content thead .font-mono,
+.main-content th.font-mono,
+.main-content label.font-mono {
+  font-family: Inter, system-ui, sans-serif;
+}
+
+/* ---- Cards & panels (light) ---------------------------------------- */
+html.light .main-content .bg-slate-900.border,
+html.light .main-content .bg-slate-900.border-slate-800 {
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(27, 38, 53, 0.06));
+}
+html.light .main-content .bg-slate-900.rounded-xl,
+html.light .main-content .bg-slate-900.rounded-lg {
+  border-radius: var(--radius-lg, 12px);
+}
+/* Panel header strips inside cards */
+html.light .main-content .bg-slate-950\/60,
+html.light .main-content .bg-slate-950\/40 {
+  background-color: var(--color-surface);
+}
+
+/* ---- Data tables ---------------------------------------------------- */
+.main-content table { border-collapse: collapse; }
+.main-content table thead th {
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+html.light .main-content table thead tr {
+  background-color: var(--color-surface);
+  color: var(--color-ink-secondary);
+  border-bottom: 2px solid var(--color-border);
+}
+html.light .main-content table thead th {
+  color: var(--color-ink-secondary);
+}
+html.light .main-content table tbody tr {
+  border-color: var(--color-border);
+}
+html.light .main-content table tbody tr:hover {
+  background-color: var(--color-brand-light);
+}
+html.dark .main-content table tbody tr:hover {
+  background-color: rgb(var(--color-slate-850));
+}
+
+/* ---- Buttons -------------------------------------------------------- */
+.main-content button.bg-brand-600,
+.main-content a.bg-brand-600 {
+  border-radius: var(--radius, 6px);
+  font-weight: 600;
+  background-image: none;
+}
+.main-content button.bg-brand-600:hover:not(:disabled),
+.main-content a.bg-brand-600:hover {
+  background-color: var(--color-brand-dark);
+}
+.main-content button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* ---- Form controls -------------------------------------------------- */
+.main-content input:not([type="checkbox"]):not([type="radio"]),
+.main-content select,
+.main-content textarea {
+  border-radius: var(--radius, 6px);
+}
+html.light .main-content input:not([type="checkbox"]):not([type="radio"]),
+html.light .main-content select,
+html.light .main-content textarea {
+  border-color: var(--color-control-border) !important;
+}
+html.light .main-content input:focus,
+html.light .main-content select:focus,
+html.light .main-content textarea:focus {
+  box-shadow: 0 0 0 3px rgba(248, 100, 7, 0.16);
+  outline: none;
+}
+.main-content input[type="checkbox"],
+.main-content input[type="radio"] { accent-color: var(--color-brand); }
+
+/* ---- Tabs: brand-coloured active underline -------------------------- */
+.main-content .border-brand-500 { border-color: var(--color-brand); }
+
+/* Search field: keep the leading icon clear of the text (beats the generic input padding) */
+.main-content .vdx-search-field input[type="text"] { padding-left: 36px !important; }
+
+/* Filter pills: the pill owns the border/background, so the select inside stays bare */
+html .main-content .vdx-filter-pill select {
+  background-color: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 4px 0 2px !important;
+  min-height: 0;
+  outline: none;
+}

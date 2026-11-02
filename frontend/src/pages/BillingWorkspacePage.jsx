@@ -27,9 +27,14 @@ import {
   Power,
   Sparkles
 } from 'lucide-react';
+import ModalClose from '../components/ModalClose';
 
-export default function BillingWorkspacePage() {
-  const [subtab, setSubtab] = useState('overview'); // 'overview' | 'schedules' | 'invoices' | 'snapshots' | 'payments' | 'accounts' | 'plans' | 'adjustments'
+export default function BillingWorkspacePage({ section, onSectionChange }) {
+  // `section` is driven by the sidebar; without it the page shows its own tab bar.
+  const [subtab, setSubtab] = useState(section || 'overview'); // 'overview' | 'schedules' | 'invoices' | 'snapshots' | 'payments' | 'accounts' | 'plans' | 'adjustments'
+  useEffect(() => { if (section) { setSubtab(section); setSuccess(null); setError(null); } }, [section]);
+  // Keep the sidebar highlight in step when the page itself jumps to another section
+  useEffect(() => { if (section && subtab !== section) onSectionChange?.(subtab); }, [subtab]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -613,7 +618,7 @@ export default function BillingWorkspacePage() {
       </div>
 
       {/* Navigation Subtabs */}
-      <div className="flex border-b border-slate-800 space-x-1">
+      <div className={`flex border-b border-slate-800 space-x-1 ${section ? 'hidden' : ''}`}>
         {[
           { id: 'overview', label: 'AR Overview', icon: Layers },
           { id: 'schedules', label: `Installment Schedules ${schedules.length > 0 ? `(${schedules.length})` : ''}`, icon: Calendar },
@@ -686,42 +691,49 @@ export default function BillingWorkspacePage() {
             <p className="text-xs text-slate-400">
               Execute standard commercial policy billing actions: generate installment schedules, issue deposit invoices, and record fiduciary premium cash receipts.
             </p>
-            <div className="flex flex-wrap gap-3 pt-2">
-              <button
-                onClick={() => setShowGenerateScheduleModal(true)}
-                className="px-3.5 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded text-xs font-semibold flex items-center space-x-1.5 transition"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>1. Bind Policy & Generate 4-Pay Schedule</span>
-              </button>
-              <button
-                onClick={() => setSubtab('schedules')}
-                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-xs font-semibold flex items-center space-x-1.5 border border-slate-700 transition"
-              >
-                <Calendar className="w-3.5 h-3.5 text-brand-400" />
-                <span>View Installment Schedules {schedules.length > 0 ? `(${schedules.length})` : ''}</span>
-              </button>
-              <button
-                onClick={() => setShowIssueInvoiceModal(true)}
-                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded text-xs font-semibold flex items-center space-x-1.5 border border-slate-700 transition"
-              >
-                <FileText className="w-3.5 h-3.5 text-brand-400" />
-                <span>2. Issue Deposit Invoice</span>
-              </button>
-              <button
-                onClick={() => setShowRecordPaymentModal(true)}
-                className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs font-semibold flex items-center space-x-1.5 transition"
-              >
-                <DollarSign className="w-3.5 h-3.5" />
-                <span>3. Capture Cash & Waterfall Allocate</span>
-              </button>
-              <button
-                onClick={() => setShowEndorsementModal(true)}
-                className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded text-xs font-semibold flex items-center space-x-1.5 shadow transition"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Scenario 2: Policy Endorsement (Truck T5)</span>
-              </button>
+            <div className="space-y-3 pt-2">
+              {/* Billing workflow steps */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <button
+                  onClick={() => setShowGenerateScheduleModal(true)}
+                  className="w-full px-3.5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 border border-transparent shadow-sm transition"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>1. Bind Policy & Generate 4-Pay Schedule</span>
+                </button>
+                <button
+                  onClick={() => setShowIssueInvoiceModal(true)}
+                  className="w-full px-3.5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 border border-transparent shadow-sm transition"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>2. Issue Deposit Invoice</span>
+                </button>
+                <button
+                  onClick={() => setShowRecordPaymentModal(true)}
+                  className="w-full px-3.5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 border border-transparent shadow-sm transition"
+                >
+                  <DollarSign className="w-3.5 h-3.5" />
+                  <span>3. Capture Cash & Waterfall Allocate</span>
+                </button>
+              </div>
+
+              {/* Related views and scenarios */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <button
+                  onClick={() => setSubtab('schedules')}
+                  className="w-full px-3.5 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-200 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 border border-slate-700 transition"
+                >
+                  <Calendar className="w-3.5 h-3.5 text-brand-400" />
+                  <span>View Installment Schedules {schedules.length > 0 ? `(${schedules.length})` : ''}</span>
+                </button>
+                <button
+                  onClick={() => setShowEndorsementModal(true)}
+                  className="w-full px-3.5 py-2.5 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 border border-brand-500/30 transition"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Scenario 2: Policy Endorsement (Truck T5)</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -747,7 +759,7 @@ export default function BillingWorkspacePage() {
               </button>
               <button
                 onClick={() => setShowEndorsementModal(true)}
-                className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded text-xs font-semibold shadow transition"
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded text-xs font-semibold shadow transition"
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>+ Apply Policy Endorsement (Scenario 2)</span>
@@ -983,7 +995,7 @@ export default function BillingWorkspacePage() {
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => setShowEndorsementModal(true)}
-                className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded text-xs font-semibold shadow transition"
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded text-xs font-semibold shadow transition"
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>+ Apply Policy Endorsement (Scenario 2)</span>
@@ -1424,7 +1436,7 @@ export default function BillingWorkspacePage() {
             </div>
             <button
               onClick={() => setShowRecordPaymentModal(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold transition"
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded text-xs font-semibold transition"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Record Cash Receipt</span>
@@ -1724,8 +1736,8 @@ export default function BillingWorkspacePage() {
 
       {/* MODAL: Create Billing Account */}
       {showNewAccountModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl">
             <h3 className="text-base font-bold text-white flex items-center space-x-2">
               <CreditCard className="w-4 h-4 text-brand-400" />
               <span>Create Billing Account (ERD Aligned)</span>
@@ -1884,14 +1896,15 @@ export default function BillingWorkspacePage() {
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowNewAccountModal(false)} />
           </div>
         </div>
       )}
 
       {/* MODAL: Create Billing Plan */}
       {showNewPlanModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 max-w-md w-full space-y-4">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <h3 className="text-base font-bold text-white flex items-center space-x-2">
               <Sliders className="w-4 h-4 text-brand-400" />
               <span>Create New Billing Plan</span>
@@ -1996,14 +2009,15 @@ export default function BillingWorkspacePage() {
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowNewPlanModal(false)} />
           </div>
         </div>
       )}
 
       {/* MODAL: Edit Billing Plan */}
       {showEditPlanModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 max-w-md w-full space-y-4">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <h3 className="text-base font-bold text-white flex items-center space-x-2">
               <Edit2 className="w-4 h-4 text-brand-400" />
               <span>Edit Billing Plan ({editPlan.plan_code})</span>
@@ -2115,14 +2129,15 @@ export default function BillingWorkspacePage() {
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowEditPlanModal(false)} />
           </div>
         </div>
       )}
 
       {/* MODAL: Generate Schedule */}
       {showGenerateScheduleModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 max-w-md w-full space-y-4">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <h3 className="text-base font-bold text-white">Bind Policy & Generate 4-Pay Schedule</h3>
             <form onSubmit={handleGenerateSchedule} className="space-y-3 text-xs">
               <div>
@@ -2198,14 +2213,15 @@ export default function BillingWorkspacePage() {
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowGenerateScheduleModal(false)} />
           </div>
         </div>
       )}
 
       {/* MODAL: Apply Policy Endorsement (Scenario 2) */}
       {showEndorsementModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-xl w-full space-y-4 shadow-2xl">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-xl w-full space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center space-x-2">
                 <div className="p-2 bg-purple-500/10 rounded-lg border border-purple-500/20 text-purple-400">
@@ -2305,27 +2321,27 @@ export default function BillingWorkspacePage() {
                     onClick={() => setEndorsementForm({ ...endorsementForm, billing_option: 'SPREAD_INSTALLMENTS' })}
                     className={`p-3 rounded-lg border cursor-pointer transition ${
                       endorsementForm.billing_option === 'SPREAD_INSTALLMENTS'
-                        ? 'bg-emerald-950/40 border-emerald-500 text-white shadow-lg'
+                        ? 'bg-brand-500/10 border-brand-500 text-white shadow-lg'
                         : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-xs flex items-center space-x-1.5 text-emerald-400">
+                      <span className="font-bold text-xs flex items-center space-x-1.5 text-brand-400">
                         <span>🅱️ Sub-Scenario 2</span>
-                        <span className="px-1.5 py-0.2 text-[9px] bg-emerald-500/20 text-emerald-300 rounded">Recommended</span>
+                        <span className="px-1.5 py-0.2 text-[9px] bg-brand-500/20 text-brand-300 rounded">Recommended</span>
                       </span>
                       <input
                         type="radio"
                         name="billingOptionRadio"
                         checked={endorsementForm.billing_option === 'SPREAD_INSTALLMENTS'}
                         onChange={() => setEndorsementForm({ ...endorsementForm, billing_option: 'SPREAD_INSTALLMENTS' })}
-                        className="text-emerald-500"
+                        className="text-brand-500"
                       />
                     </div>
                     <div className="font-semibold text-[11px] mb-1">Spread Across Remaining Installments</div>
                     <div className="text-[10px] text-slate-400 space-y-0.5">
                       <div>&bull; +$2,407.40 added to #2, #3, and #4</div>
-                      <div>&bull; Revised: <strong className="text-emerald-300">$11,819.90 / installment</strong></div>
+                      <div>&bull; Revised: <strong className="text-brand-300">$11,819.90 / installment</strong></div>
                       <div>&bull; Commercial Auto Blended Billing</div>
                     </div>
                   </div>
@@ -2380,21 +2396,22 @@ export default function BillingWorkspacePage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-4 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded font-semibold flex items-center space-x-1.5 shadow"
+                  className="px-4 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded font-semibold flex items-center space-x-1.5 shadow"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>{loading ? 'Applying...' : 'Apply Policy Endorsement'}</span>
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowEndorsementModal(false)} />
           </div>
         </div>
       )}
 
       {/* MODAL: Issue Invoice */}
       {showIssueInvoiceModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 max-w-md w-full space-y-4">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <h3 className="text-base font-bold text-white">Issue Customer Invoice</h3>
             <form onSubmit={handleIssueInvoice} className="space-y-3 text-xs">
               <div>
@@ -2544,14 +2561,15 @@ export default function BillingWorkspacePage() {
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowIssueInvoiceModal(false)} />
           </div>
         </div>
       )}
 
       {/* MODAL: Record Payment */}
       {showRecordPaymentModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 max-w-md w-full space-y-4">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <h3 className="text-base font-bold text-white">Record Cash Receipt & Waterfall Allocate</h3>
             <form onSubmit={handleRecordPayment} className="space-y-3 text-xs">
               <div>
@@ -2718,21 +2736,22 @@ export default function BillingWorkspacePage() {
                   className={`px-4 py-1.5 rounded font-semibold text-white transition ${
                     paymentRules.length === 0
                       ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                      : 'bg-emerald-600 hover:bg-emerald-500'
+                      : 'bg-brand-600 hover:bg-brand-500'
                   }`}
                 >
                   Capture Cash
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowRecordPaymentModal(false)} />
           </div>
         </div>
       )}
 
       {/* MODAL: Invoice Line Details */}
       {selectedInvoice && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 max-w-xl w-full space-y-4">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-xl w-full space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-white">Invoice {selectedInvoice.invoice.invoice_number}</h3>
@@ -2774,14 +2793,15 @@ export default function BillingWorkspacePage() {
                 Close
               </button>
             </div>
+            <ModalClose onClick={() => setSelectedInvoice(null)} />
           </div>
         </div>
       )}
 
       {/* MODAL: Snapshot JSON Payload Inspector */}
       {selectedSnapshot && (
-        <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-purple-500/30 rounded-lg p-6 max-w-2xl w-full space-y-4 shadow-2xl">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-purple-500/30 rounded-xl p-6 max-w-2xl w-full space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center space-x-2">
                 <Database className="w-5 h-5 text-purple-400" />
@@ -2856,14 +2876,15 @@ export default function BillingWorkspacePage() {
                 Close Inspector
               </button>
             </div>
+            <ModalClose onClick={() => setSelectedSnapshot(null)} />
           </div>
         </div>
       )}
 
       {/* MODAL: Ingest External Policy Snapshot (Module 35) */}
       {showNewSnapshotModal && (
-        <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 max-w-lg w-full space-y-4 shadow-2xl">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-white flex items-center space-x-2">
@@ -3004,14 +3025,15 @@ export default function BillingWorkspacePage() {
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowNewSnapshotModal(false)} />
           </div>
         </div>
       )}
 
       {/* MODAL: Register Premium Finance Agreement (Module 12) */}
       {showFinanceModal && (
-        <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 max-w-lg w-full space-y-4 shadow-2xl">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-white flex items-center space-x-2">
@@ -3115,6 +3137,7 @@ export default function BillingWorkspacePage() {
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowFinanceModal(false)} />
           </div>
         </div>
       )}

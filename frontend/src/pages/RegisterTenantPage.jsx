@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { ShieldCheck, ArrowRight, ArrowLeft, Building, Lock, Mail, User, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, ArrowRight, ArrowLeft, Building, Lock, Mail, User, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 
 export default function RegisterTenantPage({ onSwitchToLogin }) {
   const { registerTenant } = useAuth();
@@ -13,6 +13,7 @@ export default function RegisterTenantPage({ onSwitchToLogin }) {
     admin_email: 'arturo_lonepine@veridex.com',
     admin_password: 'Password123!'
   });
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
@@ -159,14 +160,25 @@ export default function RegisterTenantPage({ onSwitchToLogin }) {
               </div>
               <div className="md:col-span-2">
                 <label className="block text-xs font-medium text-slate-300 mb-1">Password</label>
-                <input
-                  type="password"
-                  required
-                  name="admin_password"
-                  value={formData.admin_password}
-                  onChange={handleChange}
-                  className="w-full px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    name="admin_password"
+                    value={formData.admin_password}
+                    onChange={handleChange}
+                    className="w-full pl-3 pr-10 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute right-3 top-2 text-slate-500 hover:text-slate-300 transition"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

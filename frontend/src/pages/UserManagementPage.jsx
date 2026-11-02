@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { authApi } from '../services/api';
 import { Users, UserPlus, Shield, Check, AlertCircle, RefreshCw } from 'lucide-react';
+import ModalClose from '../components/ModalClose';
 
 export default function UserManagementPage() {
   const { currentWorkspace, permissions } = useAuth();
@@ -178,7 +179,7 @@ export default function UserManagementPage() {
       {/* Invite Modal */}
       {showInviteModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl">
+          <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl">
             <h3 className="text-base font-bold text-white mb-1">Invite User to Workspace</h3>
             <p className="text-xs text-slate-400 mb-4">
               Add a new member to {currentWorkspace?.name} with specific financial role permissions.
@@ -265,6 +266,7 @@ export default function UserManagementPage() {
                 </button>
               </div>
             </form>
+            <ModalClose onClick={() => setShowInviteModal(false)} />
           </div>
         </div>
       )}

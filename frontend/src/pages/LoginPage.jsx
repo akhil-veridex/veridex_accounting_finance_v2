@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
-import { ShieldCheck, ArrowRight, Building, Lock, Mail, AlertCircle, Sun, Moon } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage({ onSwitchToRegister }) {
   const { login } = useAuth();
-  const { theme, toggleTheme } = useTheme();
-  const [email, setEmail] = useState('arturo_lonepine@veridex.com');
-  const [password, setPassword] = useState('Password123!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
@@ -25,100 +24,106 @@ export default function LoginPage({ onSwitchToRegister }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 relative">
-      <div className="absolute top-5 right-5">
-        <button
-          type="button"
-          onClick={toggleTheme}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-medium text-slate-300 hover:text-white transition shadow"
-          title={theme === 'dark' ? 'Switch to Day Mode' : 'Switch to Night Mode'}
-        >
-          {theme === 'dark' ? (
-            <>
-              <Sun className="w-4 h-4 text-amber-400" />
-              <span>Day Mode</span>
-            </>
-          ) : (
-            <>
-              <Moon className="w-4 h-4 text-indigo-500" />
-              <span>Night Mode</span>
-            </>
-          )}
-        </button>
-      </div>
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl">
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="h-10 w-10 bg-brand-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-brand-500/20">
-            <ShieldCheck className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-white">Veridex One</h1>
-            <p className="text-xs text-slate-400 font-medium">Finance & Accounting SaaS Platform</p>
+    <div className="auth-wrap">
+      {errorMsg && <div className="veridex-toast veridex-toast-error">{errorMsg}</div>}
+
+      <div className="auth-panel">
+        {/* Left brand panel */}
+        <div className="auth-left">
+          <div className="auth-left-content">
+            <svg width="68" height="68" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="authVdGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#F97316" />
+                  <stop offset="100%" stopColor="#F59E0B" />
+                </linearGradient>
+              </defs>
+              <rect width="32" height="32" rx="7" fill="#1e232b" stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" />
+              <path d="M7 10L13 22L17 14" stroke="url(#authVdGrad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M17 10H21C23.76 10 26 12.24 26 15C26 17.76 23.76 20 21 20H17V10Z" stroke="url(#authVdGrad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '30px', fontWeight: 800, letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: '#FFFFFF' }}>Veridex</span>
+                <span style={{ color: 'var(--color-brand)', marginLeft: '8px' }}>One</span>
+              </div>
+              <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#94a3b8', letterSpacing: '2px', marginTop: '4px' }}>
+                FINANCE &amp; ACCOUNTING SAAS PLATFORM
+              </div>
+            </div>
+            <div className="auth-left-tagline" style={{ fontSize: '12px', lineHeight: 1.5 }}>
+              General Ledger · Billing · Treasury · Commissions · Finance Close
+            </div>
           </div>
         </div>
 
-        <h2 className="text-lg font-semibold text-white mb-2">Sign in to your Workspace</h2>
-        <p className="text-xs text-slate-400 mb-6">
-          Authenticate with your tenant user credentials to access general ledger, billing, fiduciary, treasury, and close.
-        </p>
-
-        {errorMsg && (
-          <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg flex items-start space-x-2 text-rose-400 text-xs">
-            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-            <span>{errorMsg}</span>
+        {/* Right sign-in form */}
+        <div className="auth-right">
+          <div className="auth-title" style={{ textAlign: 'left', fontSize: '24px', marginBottom: '4px' }}>
+            Sign in to your Workspace
           </div>
-        )}
+          <div className="auth-subtitle" style={{ textAlign: 'left', fontSize: '13px', color: '#94a3b8', marginBottom: '18px' }}>
+            Authenticate with your tenant user credentials to access general ledger, billing, fiduciary, treasury, and close.
+          </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1.5">Work Email</label>
-            <div className="relative">
-              <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+          <form onSubmit={handleSubmit}>
+            <div className="auth-form-group">
+              <label className="auth-label" htmlFor="email">Work Email *</label>
               <input
+                id="email"
+                className="auth-input"
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="controller@yourcompany.com"
-                className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
               />
             </div>
-          </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1.5">Password</label>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
-              />
+            <div className="auth-form-group">
+              <label className="auth-label" htmlFor="password">Password *</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  id="password"
+                  className="auth-input"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  style={{ paddingRight: '40px' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                  style={{
+                    position: 'absolute',
+                    right: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    color: 'var(--color-muted)',
+                    display: 'flex'
+                  }}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
+
+            <button type="submit" className="auth-btn" disabled={submitting} style={{ marginTop: '16px' }}>
+              {submitting ? 'Authenticating...' : 'Sign In →'}
+            </button>
+          </form>
+
+          <div className="auth-link" onClick={onSwitchToRegister} style={{ cursor: 'pointer' }}>
+            Need a new organization? Onboard New Tenant
           </div>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full py-2.5 px-4 bg-brand-600 hover:bg-brand-500 active:bg-brand-700 text-white font-medium rounded-lg text-sm flex items-center justify-center space-x-2 transition-all shadow-md shadow-brand-600/20 disabled:opacity-50"
-          >
-            <span>{submitting ? 'Authenticating...' : 'Sign In'}</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </form>
-
-        <div className="mt-6 pt-6 border-t border-slate-800 flex items-center justify-between text-xs">
-          <span className="text-slate-400">Need a new organization?</span>
-          <button
-            onClick={onSwitchToRegister}
-            className="text-brand-400 hover:text-brand-300 font-medium flex items-center space-x-1"
-          >
-            <Building className="w-3.5 h-3.5 mr-1" />
-            <span>Onboard New Tenant</span>
-          </button>
         </div>
       </div>
     </div>
