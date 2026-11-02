@@ -65,6 +65,12 @@ async function simulateJournalFromEvent({
   }
 
   // 3. Evaluate lines and resolve LedgerAccounts
+  const coaCount = await LedgerAccount.countDocuments({ tenant_id: tenantId });
+  if (coaCount === 0) {
+    const { seedTenantChartOfAccounts } = require('../utils/seedCoa');
+    await seedTenantChartOfAccounts(tenantId);
+  }
+
   const context = { payload, params: {} };
   const evaluatedLines = [];
   let totalDebit = new BigNumber(0);

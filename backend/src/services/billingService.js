@@ -438,11 +438,50 @@ async function issueInvoice({
   if (!isLegacy && outboxEvent) {
     const shouldDispatch = dispatchImmediately !== null ? dispatchImmediately : !useEventPipeline;
     if (shouldDispatch) {
-      const dispatchResult = await dispatchOutboxEventRecord(outboxEvent, { userId });
-      if (dispatchResult.journal) {
-        glResult = { journal: dispatchResult.journal };
-        invoice.journal_id = dispatchResult.journal._id;
-        await Invoice.updateOne({ _id: invoice._id }, { journal_id: dispatchResult.journal._id });
+      try {
+        const dispatchResult = await dispatchOutboxEventRecord(outboxEvent, { userId });
+        if (dispatchResult.journal) {
+          glResult = { journal: dispatchResult.journal };
+          invoice.journal_id = dispatchResult.journal._id;
+          await Invoice.updateOne({ _id: invoice._id }, { journal_id: dispatchResult.journal._id });
+        }
+      } catch (dispatchErr) {
+        console.error(`[BillingService] Immediate event dispatch failed for ${invoice.invoice_number}:`, dispatchErr.message);
+        // Fallback to direct GL posting so the invoice is never left without balanced double-entry GL records
+        try {
+          const premiumLines = (lines || []).filter(l => l.line_type !== 'FEE');
+          const feeLines = (lines || []).filter(l => l.line_type === 'FEE');
+          const premAmt = premiumLines.reduce((acc, l) => acc.plus(new BigNumber(l.amount.toString())), new BigNumber(0));
+          const feeAmt = feeLines.reduce((acc, l) => acc.plus(new BigNumber(l.amount.toString())), new BigNumber(0));
+          const totAmt = premAmt.plus(feeAmt);
+
+          const fallbackLines = [
+            { account_code: '1100', debit: totAmt.toFixed(2), credit: '0.00', memo: `Dr AR for Invoice ${invoice.invoice_number}` }
+          ];
+          if (premAmt.isGreaterThan(0)) {
+            fallbackLines.push({ account_code: '2200', debit: '0.00', credit: premAmt.toFixed(2), memo: `Cr UPR for Invoice ${invoice.invoice_number}` });
+          }
+          if (feeAmt.isGreaterThan(0)) {
+            fallbackLines.push({ account_code: '4100', debit: '0.00', credit: feeAmt.toFixed(2), memo: `Cr Policy Fee Income for Invoice ${invoice.invoice_number}` });
+          }
+
+          const fallbackGl = await legacyDirectPost({
+            tenantId,
+            userId,
+            postingDate: invoiceDate,
+            sourceModule: 'BILLING_INVOICE',
+            referenceId: invoice.invoice_number,
+            memo: `Billing Invoice ${invoice.invoice_number}`,
+            lines: fallbackLines
+          });
+          if (fallbackGl && fallbackGl.journal) {
+            glResult = fallbackGl;
+            invoice.journal_id = fallbackGl.journal._id;
+            await Invoice.updateOne({ _id: invoice._id }, { journal_id: fallbackGl.journal._id });
+          }
+        } catch (fallbackErr) {
+          console.error('[BillingService] Fallback GL posting error:', fallbackErr.message);
+        }
       }
     }
     eventDriven = true;
