@@ -94,6 +94,87 @@ export default function App() {
     try { localStorage.setItem('v_sb_collapsed', sidebarCollapsed ? '1' : '0'); } catch { /* ignore */ }
   }, [sidebarCollapsed]);
 
+  const handleNavSelect = (key, updateUrl = true) => {
+    if (updateUrl) {
+      try {
+        let tab = key;
+        let subtab = '';
+        if (key.startsWith('gl:')) { tab = 'gl'; subtab = key.slice(3); }
+        else if (key.startsWith('comm:')) { tab = 'commissions_fiduciary'; subtab = key.slice(5); }
+        else if (key.startsWith('bill:')) { tab = 'billing_ar'; subtab = key.slice(5); }
+        else if (key.startsWith('treas:')) { tab = 'treasury_bank_rec'; subtab = key.slice(6); }
+        else if (key.startsWith('close:')) { tab = 'finance_close'; subtab = key.slice(6); }
+
+        const search = subtab ? ('?tab=' + tab + '&subtab=' + subtab) : ('?tab=' + tab);
+        window.history.pushState(null, '', window.location.pathname + search + '#' + key);
+      } catch (e) { /* ignore */ }
+    }
+    if (key.startsWith('gl:')) {
+      setGlSection(key.slice(3));
+      setActiveTab('gl');
+    } else if (key.startsWith('comm:')) {
+      setCommSection(key.slice(5));
+      setActiveTab('commissions_fiduciary');
+    } else if (key.startsWith('bill:')) {
+      setBillSection(key.slice(5));
+      setActiveTab('billing_ar');
+    } else if (key.startsWith('treas:')) {
+      setTreasSection(key.slice(6));
+      setActiveTab('treasury_bank_rec');
+    } else if (key.startsWith('close:')) {
+      setCloseSection(key.slice(6));
+      setActiveTab('finance_close');
+    } else {
+      setActiveTab(key);
+    }
+  };
+
+  // Synchronize deep-link URL params & hash routing on load and browser navigation (Top Level Hook)
+  React.useEffect(() => {
+    const syncFromUrl = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const pageParam = urlParams.get('page');
+      const tabParam = urlParams.get('tab');
+      const subtabParam = urlParams.get('subtab');
+
+      if (pageParam) {
+        handleNavSelect(pageParam, false);
+        return;
+      }
+      if (tabParam) {
+        const prefixMap = {
+          'gl': 'gl:',
+          'commissions_fiduciary': 'comm:',
+          'billing_ar': 'bill:',
+          'treasury_bank_rec': 'treas:',
+          'finance_close': 'close:'
+        };
+        const pfx = prefixMap[tabParam];
+        if (pfx && subtabParam) {
+          handleNavSelect(pfx + subtabParam, false);
+          return;
+        } else {
+          handleNavSelect(tabParam, false);
+          return;
+        }
+      }
+
+      const rawHash = window.location.hash.replace(/^#\/?/, '');
+      if (rawHash) {
+        handleNavSelect(rawHash, false);
+      }
+    };
+
+    syncFromUrl();
+    window.addEventListener('popstate', syncFromUrl);
+    window.addEventListener('hashchange', syncFromUrl);
+    return () => {
+      window.removeEventListener('popstate', syncFromUrl);
+      window.removeEventListener('hashchange', syncFromUrl);
+    };
+  }, []);
+
+
   const handleClearTestData = async () => {
     const confirmed = window.confirm(
       `⚠️ Clear Test Data for "${currentWorkspace?.name || 'this workspace'}"?\n\nThis will remove all test Invoices, Payments, Installment Schedules, Billing Accounts, Journals, and Counterparties for this tenant.\n\nYour user account and workspace login will remain active.`
@@ -225,27 +306,7 @@ export default function App() {
   const tenantType = currentWorkspace?.tenant_type || 'MGA';
   const typeBadge = TENANT_TYPE_BADGES[tenantType] || TENANT_TYPE_BADGES.MGA;
 
-  const activeKey = activeTab === 'gl' ? `gl:${glSection}` : activeTab === 'commissions_fiduciary' ? `comm:${commSection}` : activeTab === 'billing_ar' ? `bill:${billSection}` : activeTab === 'treasury_bank_rec' ? `treas:${treasSection}` : activeTab === 'finance_close' ? `close:${closeSection}` : activeTab;
-  const handleNavSelect = (key) => {
-    if (key.startsWith('gl:')) {
-      setGlSection(key.slice(3));
-      setActiveTab('gl');
-    } else if (key.startsWith('comm:')) {
-      setCommSection(key.slice(5));
-      setActiveTab('commissions_fiduciary');
-    } else if (key.startsWith('bill:')) {
-      setBillSection(key.slice(5));
-      setActiveTab('billing_ar');
-    } else if (key.startsWith('treas:')) {
-      setTreasSection(key.slice(6));
-      setActiveTab('treasury_bank_rec');
-    } else if (key.startsWith('close:')) {
-      setCloseSection(key.slice(6));
-      setActiveTab('finance_close');
-    } else {
-      setActiveTab(key);
-    }
-  };
+  const activeKey = activeTab === "gl" ? `gl:${glSection}` : activeTab === "commissions_fiduciary" ? `comm:${commSection}` : activeTab === "billing_ar" ? `bill:${billSection}` : activeTab === "treasury_bank_rec" ? `treas:${treasSection}` : activeTab === "finance_close" ? `close:${closeSection}` : activeTab;
 
   const navGroups = [
     { id: 'financial', label: 'Overview', icon: LayoutDashboard, items: financialNavItems },
