@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, ShieldCheck, Building2, Briefcase } from 'lucide-react';
 
 export default function LoginPage({ onSwitchToRegister }) {
   const { login } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('alex.controller@harbor-mga.com');
+  const [password, setPassword] = useState('password123');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setErrorMsg(null);
     setSubmitting(true);
     try {
@@ -21,6 +21,14 @@ export default function LoginPage({ onSwitchToRegister }) {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleQuickLogin = (roleEmail) => {
+    setEmail(roleEmail);
+    setPassword('password123');
+    setTimeout(() => {
+      login(roleEmail, 'password123');
+    }, 50);
   };
 
   return (
@@ -48,7 +56,7 @@ export default function LoginPage({ onSwitchToRegister }) {
                 <span style={{ color: 'var(--color-brand)', marginLeft: '8px' }}>One</span>
               </div>
               <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#94a3b8', letterSpacing: '2px', marginTop: '4px' }}>
-                FINANCE &amp; ACCOUNTING SAAS PLATFORM
+                FINANCE &amp; ACCOUNTING PROTOTYPE (LOCAL STORAGE)
               </div>
             </div>
             <div className="auth-left-tagline" style={{ fontSize: '12px', lineHeight: 1.5 }}>
@@ -63,7 +71,43 @@ export default function LoginPage({ onSwitchToRegister }) {
             Sign in to your Workspace
           </div>
           <div className="auth-subtitle" style={{ textAlign: 'left', fontSize: '13px', color: '#94a3b8', marginBottom: '18px' }}>
-            Authenticate with your tenant user credentials to access general ledger, billing, fiduciary, treasury, and close.
+            100% Offline LocalStorage Prototype — No DB or server required.
+          </div>
+
+          {/* Quick 1-Click Role Login Shortcuts */}
+          <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Quick 1-Click Persona Sign-In:
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('alex.controller@harbor-mga.com')}
+                style={{ padding: '6px 8px', background: '#0f172a', border: '1px solid #334155', borderRadius: '6px', color: '#f8fafc', fontSize: '11px', cursor: 'pointer', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}
+              >
+                <ShieldCheck size={14} color="#f97316" />
+                <span>Harbor MGA</span>
+                <span style={{ fontSize: '9px', color: '#64748b' }}>Controller</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('carrier@summit-mutual.com')}
+                style={{ padding: '6px 8px', background: '#0f172a', border: '1px solid #334155', borderRadius: '6px', color: '#f8fafc', fontSize: '11px', cursor: 'pointer', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}
+              >
+                <Building2 size={14} color="#3b82f6" />
+                <span>Summit Mutual</span>
+                <span style={{ fontSize: '9px', color: '#64748b' }}>Carrier</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('broker@brightline.com')}
+                style={{ padding: '6px 8px', background: '#0f172a', border: '1px solid #334155', borderRadius: '6px', color: '#f8fafc', fontSize: '11px', cursor: 'pointer', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}
+              >
+                <Briefcase size={14} color="#a855f7" />
+                <span>Brightline</span>
+                <span style={{ fontSize: '9px', color: '#64748b' }}>Broker</span>
+              </button>
+            </div>
           </div>
 
           <form onSubmit={handleSubmit}>
