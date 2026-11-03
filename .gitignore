@@ -25,3 +25,9 @@ Thumbs.db
 # Coverage / temp
 coverage/
 .tmp/
+
+# Local generated docs
+*.docx
+doc_images/
+build_full_document.py
+generate_documentation.py
